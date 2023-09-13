@@ -17,7 +17,7 @@
 # r - option to make or not faster-report
 
 # setup
-set -e
+# set -e
 usage="$(basename "$0") [-c csvfile] [-p fastqpath] [-h] [-r]
 
 Process ONT sequencing run - cat, compress, rename fastq files from a fastq_pass folder
@@ -55,7 +55,7 @@ if [[ ! -f ${csvfile} ]] || [[ ! -d ${fastqpath} ]]; then
 fi
 
 [ -d processed ] && \
-echo "Results folder exists, will be deleted ..." && \
+echo "Processed folder exists, will be deleted ..." && \
 rm -rf processed
 mkdir -p processed/fastq
 cp $csvfile processed/samplesheet.csv # make a copy of the sample sheet
