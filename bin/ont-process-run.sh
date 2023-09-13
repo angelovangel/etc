@@ -17,20 +17,37 @@
 # r - option to make or not faster-report
 
 # setup
+set -e
+usage="$(basename "$0") [-c csvfile] [-p fastqpath] [-h] [-r]
+
+Process ONT sequencing run - cat, compress, rename fastq files from a fastq_pass folder
+based on the samplesheet. Run faster or faster-report on the files. 
+Results are saved in 'processed' folder in the current directory.
+Options:
+    -h  show this help text
+    -c  (required) a path to a csv file with columns 'sample' and 'barcode', in any order
+    -p  (required) path to ONT fastq_pass folder
+    -r  (optional flag) generate faster-report html file"
+
 makereport=false
 
-while getopts c:p:r flag
+while getopts :hrc:p: flag
 do
    case "${flag}" in
+      h) echo "$usage"; exit;;
       c) csvfile=${OPTARG};;
       p) fastqpath=${OPTARG};;
       r) makereport=true;;
-      ?) printf "Usage: %s -c samplesheet.csv -p fastq_pass -r \n" $0
-         exit 2;;
+      :) printf "missing argument for -%s\n" "$OPTARG" >&2; echo "$usage" >&2; exit 1;;
+     \?) printf "illegal option: -%s\n" "$OPTARG" >&2; echo "$usage" >&2; exit 1;;
    esac
 done
 
-shift "$(( OPTIND - 1 ))"
+# mandatory arguments
+if [ ! "$csvfile" ] || [ ! "$fastqpath" ]; then
+  echo "arguments -c and -p must be provided"
+  echo "$usage" >&2; exit 1
+fi
 
 if [[ ! -f ${csvfile} ]] || [[ ! -d ${fastqpath} ]]; then
     echo "File ${csvfile} or ${fastqpath} does not exist" >&2
