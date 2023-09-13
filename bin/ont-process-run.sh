@@ -59,8 +59,8 @@ while IFS="," read line; do
     samplename=$(echo $line | cut -f $samplename_idx -d,)
     barcode=$(echo $line | cut -f $barcode_idx -d,)
     currentdir=${fastqpath}/${barcode// /}
-    # skip if barcode is NA or is not a valid barcode name. Also skip if there is no user or sample name specified
-    if [[ $barcode != barcode[0-9][0-9] ]] || [[ $samplename == 'NA' ]]; then
+    # skip header and if barcode or sample is NA 
+    if [[ $barcode == 'barcode' ]] || [[ $barcode == 'NA' ]] || [[ $samplename == 'NA' ]]; then
         echo "skipping $line"
         continue
     fi
