@@ -1,10 +1,11 @@
 #! /usr/bin/env bash
+# dependa
+# cat, compress, rename fastq files from a fastq_pass based on csv or excel sample-barcode sheet
+# runs faster to generate summary data
+# optionally runs faster-report to generate html report
 
-# cat, compress, rename fastq files from a fastq_pass based on csv sample-barcode sheet
-# runs faster (required dependency) to generate summary data
-
-# c - a path to csv file
-# ',' separated csv file with unix line endings. Columns are sample and barcode, in any order
+# c - a path to a csv or Excel file
+# Columns are sample and barcode, in any order
 #------------------------
 # sample, barcode
 # sample1, barcode01
@@ -18,14 +19,14 @@
 
 # setup
 # set -e
-usage="$(basename "$0") [-c csvfile] [-p fastqpath] [-h] [-r]
+usage="$(basename "$0") [-c samplesheet] [-p fastqpath] [-h] [-r]
 
 Process ONT sequencing run - cat, compress, rename fastq files from a fastq_pass folder
 based on the samplesheet. Run faster or faster-report on the files. 
 Results are saved in 'processed' folder in the current directory.
 Options:
     -h  show this help text
-    -c  (required) a path to a csv file with columns 'sample' and 'barcode', in any order
+    -c  (required) a path to a csv or Excel file with columns 'sample' and 'barcode', in any order
     -p  (required) path to ONT fastq_pass folder
     -r  (optional flag) generate faster-report html file"
 
@@ -35,7 +36,7 @@ while getopts :hrc:p: flag
 do
    case "${flag}" in
       h) echo "$usage"; exit;;
-      c) csvfile=${OPTARG};;
+      c) infile=${OPTARG};;
       p) fastqpath=${OPTARG};;
       r) makereport=true;;
       :) printf "missing argument for -%s\n" "$OPTARG" >&2; echo "$usage" >&2; exit 1;;
@@ -44,18 +45,31 @@ do
 done
 
 # mandatory arguments
-if [ ! "$csvfile" ] || [ ! "$fastqpath" ]; then
+if [ ! "$infile" ] || [ ! "$fastqpath" ]; then
   echo "arguments -c and -p must be provided"
   echo "$usage" >&2; exit 1
 fi
 
-if [[ ! -f ${csvfile} ]] || [[ ! -d ${fastqpath} ]]; then
-    echo "File ${csvfile} or ${fastqpath} does not exist" >&2
+if [[ ! -f ${infile} ]] || [[ ! -d ${fastqpath} ]]; then
+    echo "File ${infile} or ${fastqpath} does not exist" >&2
     exit 2
 fi
 
+# convert to csv if excel is provided
+infile_ext=${infile##*.}
+if [ ${infile##*.} == 'xlsx' ]; then
+    echo 'Excel file provided, will be converted to csv ...'
+    excel2csv.R $infile &&
+    csvfile=$(basename $infile .$infile_ext).csv && 
+    echo -e "CSV file generated ==> ${csvfile} \n================================================================" ||
+    echo 'Converting Excel to csv failed...!'
+else
+    echo -e 'CSV file provided...\n================================================================'
+    csvfile=$infile
+fi
+
 [ -d processed ] && \
-echo "Processed folder exists, will be deleted ..." && \
+echo -e "Processed folder exists, will be deleted ...\n================================================================" && \
 rm -rf processed
 mkdir -p processed/fastq
 cp $csvfile processed/samplesheet.csv # make a copy of the sample sheet
@@ -91,20 +105,22 @@ while IFS="," read line; do
     echo folder ${currentdir} not found or empty!
 done < $csvfile
 
+nsamples=$(ls -A processed/fastq/*.fastq.gz | wc -l)
+[ "$(ls -A processed/fastq/*.fastq.gz)" ] &&
+echo -e '================================================================' &&
+echo "Running faster on $nsamples samples ..." && 
+echo -e "file\treads\tbases\tn_bases\tmin_len\tmax_len\tmean_len\tQ1\tQ2\tQ3\tN50\tQ20_percent\tQ30_percent" > processed/fastq-stats.tsv &&
+parallel -k faster -ts ::: processed/fastq/*.fastq.gz >> processed/fastq-stats.tsv || 
+echo "No fastq files found"
+
 
 if [[ $makereport == 'true' ]] && [[ $(command -v faster-report.R) ]]; then
-    [ "$(ls -A processed/fastq/*.fastq.gz)" ] && 
+    [ "$(ls -A processed/fastq/*.fastq.gz)" ] &&
+    echo -e 'Running faster-report.R ...\n================================================================' && 
     faster-report.R -p $(realpath processed/fastq) &&
     mv faster-report.html processed/faster-report.html ||
     echo "No fastq files found"
-else
-    nsamples=$(ls -A processed/fastq/*.fastq.gz | wc -l)
-    [ "$(ls -A processed/fastq/*.fastq.gz)" ] && 
-    echo "Running faster on $nsamples samples ..." && 
-    echo -e "file\treads\tbases\tn_bases\tmin_len\tmax_len\tmean_len\tQ1\tQ2\tQ3\tN50\tQ20_percent\tQ30_percent" > processed/fastq-stats.tsv &&
-    parallel -k faster -ts ::: processed/fastq/*.fastq.gz >> processed/fastq-stats.tsv || 
-    echo "No fastq files found"
 fi
 
-echo "Done!"
+echo -e "================================================================\nDone!"
 
