@@ -17,4 +17,4 @@ bname <- tools::file_path_sans_ext(basename(arg[1]))
 
 
 df <- readxl::read_excel(arg[1])
-write.csv(df, file = file.path(bdir, paste0(bname, '.csv')), row.names = F)
+write.csv(df, file = file.path(bdir, paste0(bname, '.csv')), row.names = F, quote = FALSE)
