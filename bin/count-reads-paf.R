@@ -19,12 +19,21 @@ headers <- c(
   )
 
 df <- vroom::vroom(paf, col_names = headers, col_select = all_of(headers))
-df %>%
-  dplyr::filter(mapq >= 50) %>% 
-  #dplyr::mutate(acc =num_matches/align_len ) %>%
+# mapq is not good for filtering 16S alignments - https://github.com/lh3/minimap2/issues/223
+
+tbl <- 
+  df %>%
+  group_by(query) %>%
+  mutate(acc = num_matches/align_len) %>% 
+  dplyr::filter(row_number() == 1) %>% 
   group_by(target) %>% 
-  summarise(n = n()) %>%
-  ungroup() %>%
+  reframe(target, n =n()) %>% 
+  unique() %>% 
   mutate(frac = n/sum(n)) %>%
-  arrange(desc(n)) %>%
-  write.csv(file = file.path(bdir, paste0(bname, '.csv')), row.names = F, quote = FALSE)
+  arrange(desc(n))
+
+write.csv(tbl, file = file.path(bdir, paste0(bname, '.csv')), row.names = F, quote = FALSE)
+
+
+print(paste0('Total reads: ', sum(tbl$n, na.rm = T)))
+
