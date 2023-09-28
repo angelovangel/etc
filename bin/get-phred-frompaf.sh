@@ -2,4 +2,4 @@
 
 # get the qscore from a paf with a de:f tag (as in minimap2 -c)
 
-awk '$12 >= 60' | grep -o 'de:f:[.0-9]*' | cut -d: -f3 | awk '{print -10*(log($1)/log(10))}' < "${1:-/dev/stdin}"
+cat "${1:-/dev/stdin}" | awk '$12 >= 60' | grep -o 'de:f:[.0-9]*' | cut -d: -f3 | awk '{print -10*(log($1)/log(10))}'
