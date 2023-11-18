@@ -45,7 +45,7 @@ SAMFILE=$samplename.sam
 if [ -f "$SAMFILE" ]; then
     echo "$SAMFILE exists and will be used to make a sorted and indexed bam..."
     
-    samtools view -S -b -@ $processors $SAMFILE | \
+    samtools view -S -b -@ $processors -T $1 $SAMFILE | \
     samtools sort -@ $processors -o $samplename.bam -
     samtools index -@ $processors $samplename.bam
 
