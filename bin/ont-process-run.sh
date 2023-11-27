@@ -95,6 +95,7 @@ while IFS="," read line; do
         echo "skipping $line"
         continue
     fi
+    pigz -q $currentdir/*.* #in case these are fastq files
     ((counter++)) # counter to add to sample name
     prefix=$(printf "%02d" $counter) # prepend zero
     # check if dir exists and has files and cat
