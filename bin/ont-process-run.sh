@@ -87,6 +87,7 @@ fi
 
 counter=0
 while IFS="," read line; do
+    [ -z "$line" ] && continue # skip empty lines
     samplename=$(echo $line | cut -f $samplename_idx -d,)
     barcode=$(echo $line | cut -f $barcode_idx -d,)
     currentdir=${fastqpath}/${barcode// /}
