@@ -5,13 +5,30 @@
 
 require(vroom)
 require(dplyr)
+require(optparse)
 
-arg <- commandArgs(trailingOnly = TRUE)
-if( length(arg) != 1 ) { stop(" Incorrect number of arguments") }
+option_list <- list(
+  make_option(
+    c("-m", "--mapq"), 
+    type = 'integer', 
+    default = 0,
+    help = "Filter alignments on mapq [default = 0]"),
+  make_option(
+    c('-p', '--paf'), 
+    type = 'character', 
+    action = 'store', 
+    help = 'Path to PAF file'
+  )
+)
 
-paf <- file.path(arg[1])
-bdir <- dirname(tools::file_path_as_absolute(arg[1]))
-bname <- tools::file_path_sans_ext(basename(arg[1]))
+opts <- parse_args(OptionParser(option_list = option_list))
+
+#arg <- commandArgs(trailingOnly = TRUE)
+#if( length(arg) != 1 ) { stop(" Incorrect number of arguments") }
+
+paf <- file.path(opts$paf)
+bdir <- dirname(tools::file_path_as_absolute(opts$paf))
+bname <- tools::file_path_sans_ext(basename(opts$paf))
 
 headers <- c(
   'query', 'query_len', 'query_start', 'query_end', 'strand', 
@@ -23,6 +40,7 @@ df <- vroom::vroom(paf, col_names = headers, col_select = all_of(headers))
 
 tbl <- 
   df %>%
+  dplyr::filter(mapq >= opts$mapq) %>%
   group_by(query) %>%
   mutate(acc = num_matches/align_len) %>% 
   dplyr::filter(row_number() == 1) %>% 
