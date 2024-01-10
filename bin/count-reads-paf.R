@@ -11,8 +11,8 @@ option_list <- list(
   make_option(
     c("-m", "--mapq"), 
     type = 'integer', 
-    default = 0,
-    help = "Filter alignments on mapq [default = 0]"),
+    default = 60,
+    help = "Filter alignments on mapq [default = 60]"),
   make_option(
     c('-p', '--paf'), 
     type = 'character', 
@@ -23,8 +23,9 @@ option_list <- list(
 
 opts <- parse_args(OptionParser(option_list = option_list))
 
-#arg <- commandArgs(trailingOnly = TRUE)
-#if( length(arg) != 1 ) { stop(" Incorrect number of arguments") }
+if (!file.exists(opts$paf) || !is.numeric(opts$mapq)) {
+  stop('Parameters are not valid!')
+}
 
 paf <- file.path(opts$paf)
 bdir <- dirname(tools::file_path_as_absolute(opts$paf))
@@ -52,6 +53,7 @@ tbl <-
 
 write.csv(tbl, file = file.path(bdir, paste0(bname, '.csv')), row.names = F, quote = FALSE)
 
-
+print(paste0('CSV file written to: ', bdir))
 print(paste0('Total reads: ', sum(tbl$n, na.rm = T)))
+print(paste0('Total targets: ', length(unique(tbl$target))))
 
