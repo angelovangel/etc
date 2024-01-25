@@ -14,12 +14,12 @@ Options:
     -r  (optional flag) find pod5 files recursively
     -b  (optional flag) save reads in bam files, (fastq.gz by default)"
 
-
 recurs=false
 bam=false
 
 unset -v model
 unset -v podpath
+unset -v kit
 
 while getopts :hrbm:p:k: flag
 do
