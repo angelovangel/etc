@@ -94,14 +94,16 @@ fi
 echo "------------------------"
 
 if [[ $demux == 'true' ]]; then
-    dorado basecaller --min-qscore 7 $rec $model $podpath | dorado demux $emit --kit-name $kit --output-dir $output_directory
+    dorado basecaller --min-qscore 7 $rec --kit-name $kit --barcode-both-ends --trim 'adapters' $model $podpath | \
+    dorado demux $emit --no-classify --output-dir $output_directory
 else
-    dorado basecaller --min-qscore 7 $rec $emit $model $podpath > $output_directory/$outfile 
+    dorado basecaller --min-qscore 7 $rec $emit --trim 'adapters' $model $podpath > $output_directory/$outfile
 fi
 
 echo "------------------------"
 echo "Elapsed time: $SECONDS seconds"
-echo "[$(date +"%Y-%m-%d %H:%M:%S")] - finished, basecalled data is in $(realpath $output_directory)"
+echo "[$(date +"%Y-%m-%d %H:%M:%S")] - finished basecalling, data is in $(realpath $output_directory)" | \
+tee -a dorado-basecall.log
 echo "------------------------"
 # clean up
 # rm -rf .temp_dorado*
