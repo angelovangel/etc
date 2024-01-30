@@ -63,10 +63,10 @@ esac
 mkdir -p "$output_directory"
 
 if [[ $bam == 'true' ]]; then
-    outfile="dorado-$model.bam"
+    outfile="reads-$model.bam"
     emit=""
 else
-    outfile="dorado-$model.fastq"
+    outfile="reads-$model.fastq"
     emit="--emit-fastq"
 fi
 
