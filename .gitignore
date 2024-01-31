@@ -13,3 +13,4 @@ test*
 samplesheet*
 processed*
 *.log
+.temp*

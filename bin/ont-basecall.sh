@@ -60,6 +60,8 @@ case "$choice" in
   * ) echo "Creating output directory: $(realpath $output_directory)";;
 esac
 
+npod5files=$(find $podpath -name "*.pod5" | wc -l)
+
 mkdir -p "$output_directory"
 
 if [[ $bam == 'true' ]]; then
@@ -86,10 +88,12 @@ SECONDS=0
 echo "------------------------"
 if [[ $demux == 'false' ]]; then
     echo "[$(date +"%Y-%m-%d %H:%M:%S")] - starting basecalling (${model} model), using dorado version ${dorado_version}" | \
-    tee -a dorado-basecall.log
+    tee -a $output_directory/basecall.log
+    echo "[$(date +"%Y-%m-%d %H:%M:%S")] - found ${npod5files} pod5 files" | tee -a $output_directory/basecall.log
 else
     echo "[$(date +"%Y-%m-%d %H:%M:%S")] - starting basecalling (${model} model) and demultiplexing (${kit}), using dorado version ${dorado_version}" | \
-    tee -a dorado-basecall.log
+    tee -a $output_directory/basecall.log
+    echo "[$(date +"%Y-%m-%d %H:%M:%S")] - found ${npod5files} pod5 files" | tee -a $output_directory/basecall.log
 fi
 echo "------------------------"
 
@@ -102,8 +106,8 @@ fi
 
 echo "------------------------"
 echo "Elapsed time: $SECONDS seconds"
-echo "[$(date +"%Y-%m-%d %H:%M:%S")] - finished basecalling, data is in $(realpath $output_directory)" | \
-tee -a dorado-basecall.log
+echo "[$(date +"%Y-%m-%d %H:%M:%S")] - finished basecalling of ${npod5files} files, data is in $(realpath $output_directory)" | \
+tee -a $output_directory/basecall.log
 echo "------------------------"
 # clean up
 # rm -rf .temp_dorado*
