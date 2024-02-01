@@ -56,12 +56,12 @@ output_directory=$(dirname $podpath)/basecall-$model
 
 [ -d $output_directory ] && \
 echo -e "Basecalled folder exists, will be deleted ...\n==============================" && \
-read -p "Continue (y/n)?" choice
-case "$choice" in 
-  y|Y ) rm -rf $output_directory;;
-  n|N ) echo "Exiting.." && exit 1;;
-  * ) echo "Creating output directory: $(realpath $output_directory)";;
-esac
+# read -p "Continue (y/n)?" choice
+# case "$choice" in 
+#   y|Y ) rm -rf $output_directory;;
+#   n|N ) echo "Exiting.." && exit 1;;
+#   * ) echo "Creating output directory: $(realpath $output_directory)";;
+# esac
 
 npod5files=$(find $podpath -name "*.pod5" | wc -l)
 
