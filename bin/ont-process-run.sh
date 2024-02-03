@@ -1,5 +1,5 @@
 #! /usr/bin/env bash
-# dependa
+# dependencies: pigz, parallel, faster, faster-report.R
 # cat, compress, rename fastq files from a fastq_pass based on csv or excel sample-barcode sheet
 # runs faster to generate summary data
 # optionally runs faster-report to generate html report
@@ -28,17 +28,19 @@ Options:
     -h  show this help text
     -c  (required) a path to a csv or Excel file with columns 'sample' and 'barcode', in any order
     -p  (required) path to ONT fastq_pass folder
-    -r  (optional flag) generate faster-report html file"
+    -r  (optional flag) generate faster-report html file
+    -n  (optional) non-barcoded run - use barcode00 in samplesheet"
 
 makereport=false
 
-while getopts :hrc:p: flag
+while getopts :hrnc:p: flag
 do
    case "${flag}" in
       h) echo "$usage"; exit;;
       c) infile=${OPTARG};;
       p) fastqpath=${OPTARG};;
       r) makereport=true;;
+      n) nonbc=true;;
       :) printf "missing argument for -%s\n" "$OPTARG" >&2; echo "$usage" >&2; exit 1;;
      \?) printf "illegal option: -%s\n" "$OPTARG" >&2; echo "$usage" >&2; exit 1;;
    esac
@@ -68,11 +70,14 @@ else
     csvfile=$infile
 fi
 
-[ -d processed ] && \
+# place processed in parent folder of $fastqpath
+processed=$(dirname $fastqpath)/processed
+
+[ -d $processed ] && \
 echo -e "Processed folder exists, will be deleted ...\n================================================================" && \
-rm -rf processed
-mkdir -p processed/fastq
-cp $csvfile processed/samplesheet.csv # make a copy of the sample sheet
+rm -rf $processed
+mkdir -p $processed/fastq
+cp $csvfile $processed/samplesheet.csv # make a copy of the sample sheet
 
 # get col indexes
 samplename_idx=$(head -1 ${csvfile} | sed 's/,/\n/g' | nl | grep -E 'S|sample' | cut -f 1)
@@ -83,6 +88,15 @@ num='[0-9]+'
 if  [[ ! $samplename_idx =~ $num ]] || [[ ! $barcode_idx =~ $num ]]; then
     echo "Samplesheet is not valid, check that columns 'sample' and 'barcode' exist" >&2
     exit 2
+fi
+
+# if non-barcoded, mv fastq files in barcode00 and proceed as ususal
+if [[ $nonbc == 'true' ]] && [[ $(ls -A $fastqpath/*.fastq.gz) ]]; then
+    echo -e "Non-barcoded run, will create $fastqpath/barcode00 directory...\n================================================================"
+    mkdir -p $fastqpath/barcode00 && mv $fastqpath/*.fastq.gz $fastqpath/barcode00/
+elif [[ $nonbc == 'true' ]]; then
+    echo -e "Non-barcoded run selected, but no fastq files found in $fastqpath \n================================================================"
+    exit 0
 fi
 
 counter=0
@@ -103,24 +117,24 @@ while IFS="," read line; do
     [ -d $currentdir ] && 
     [ "$(ls -A $currentdir)" ] && 
     echo "merging ${samplename} ----- ${barcode}" && 
-    cat $currentdir/*.fastq.gz > processed/fastq/${prefix}_${samplename}.fastq.gz ||
+    cat $currentdir/*.fastq.gz > $processed/fastq/${prefix}_${samplename}.fastq.gz ||
     echo folder ${currentdir} not found or empty!
 done < $csvfile
 
-nsamples=$(ls -A processed/fastq/*.fastq.gz | wc -l)
-[ "$(ls -A processed/fastq/*.fastq.gz)" ] &&
+nsamples=$(ls -A $processed/fastq/*.fastq.gz | wc -l)
+[ "$(ls -A $processed/fastq/*.fastq.gz)" ] &&
 echo -e '================================================================' &&
 echo "Running faster on $nsamples samples ..." && 
-echo -e "file\treads\tbases\tn_bases\tmin_len\tmax_len\tmean_len\tQ1\tQ2\tQ3\tN50\tQ20_percent\tQ30_percent" > processed/fastq-stats.tsv &&
-parallel -k faster -ts ::: processed/fastq/*.fastq.gz >> processed/fastq-stats.tsv || 
+echo -e "file\treads\tbases\tn_bases\tmin_len\tmax_len\tmean_len\tQ1\tQ2\tQ3\tN50\tQ20_percent\tQ30_percent" > $processed/fastq-stats.tsv &&
+parallel -k faster -ts ::: $processed/fastq/*.fastq.gz >> $processed/fastq-stats.tsv || 
 echo "No fastq files found"
 
 
 if [[ $makereport == 'true' ]] && [[ $(command -v faster-report.R) ]]; then
-    [ "$(ls -A processed/fastq/*.fastq.gz)" ] &&
+    [ "$(ls -A $processed/fastq/*.fastq.gz)" ] &&
     echo -e 'Running faster-report.R ...\n================================================================' && 
-    faster-report.R -p $(realpath processed/fastq) &&
-    mv faster-report.html processed/faster-report.html ||
+    faster-report.R -p $(realpath $processed/fastq) &&
+    mv faster-report.html $processed/faster-report.html ||
     echo "No fastq files found"
 fi
 
