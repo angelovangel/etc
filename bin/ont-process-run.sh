@@ -102,8 +102,8 @@ fi
 counter=0
 while IFS="," read line; do
     [ -z "$line" ] && continue # skip empty lines
-    samplename=$(echo $line | cut -f $samplename_idx -d,)
-    barcode=$(echo $line | cut -f $barcode_idx -d,)
+    samplename=$(echo $line | cut -f $samplename_idx -d, | tr -d " ") # also trim white spaces from sample names
+    barcode=$(echo $line | cut -f $barcode_idx -d, | tr -d " ") # also trim white spaces from bc names
     currentdir=${fastqpath}/${barcode// /}
     # skip header and if barcode or sample is NA 
     if [[ $barcode == 'barcode' ]] || [[ $barcode == 'NA' ]] || [[ $samplename == 'NA' ]]; then
