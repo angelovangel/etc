@@ -1,10 +1,10 @@
 #! /usr/bin/env bash
-# re-basecall with dorado in a tmux
+# re-basecall and demux with dorado in a tmux
 
 # IMPORTANT
-# ln -s both bin/dorado and lib/lib to /usr/local/bin and use /usr/local/lib
+# ln -s both bin/dorado and lib/lib to /usr/local/bin and /usr/local/lib
 
-usage="$(basename "$0") [-m model] [-p pod5] [-k kit] [-r] [-b] [-h]
+usage="$(basename "$0") [-m model] [-p pod5] [-k kit] [-r] [-b] [-t] [-f] [-h]
 
 Basecall and optionally demultiplex pod5 files using dorado.
 Options:
@@ -58,7 +58,7 @@ run_directory=$(dirname $podpath)
 output_directory=$(dirname $podpath)/basecall-$model
 
 [ -d $output_directory ] && \
-echo -e "Basecalled folder exists, will be deleted ...\n==============================" && \
+echo -e "Basecalled folder exists, will be deleted ...\n=============================="
 # read -p "Continue (y/n)?" choice
 # case "$choice" in 
 #   y|Y ) rm -rf $output_directory;;
