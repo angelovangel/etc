@@ -56,7 +56,7 @@ fi
 
 # check for output directory, make it same level as the main run folder, e.g. parent of pod5 dir
 run_directory=$(dirname $podpath)
-output_directory=$(dirname $podpath)/duplex-basecall-$model
+output_directory=$(dirname $podpath)/basecall-duplex-$model
 npod5files=$(find $podpath -name "*.pod5" | wc -l | tr -d ' ') 
 
 [ -d $output_directory ] && \
