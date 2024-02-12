@@ -94,7 +94,8 @@ echo "------------------------"
 
 # first do dorado duplex, then demux or not
 
-dorado duplex $rec $model $podpath > $output_directory/basecall.bam
+dorado duplex $rec $model $podpath 1> $output_directory/basecall.bam 2> >(tee -a $output_directory/0_basecall.log >&2)
+# https://stackoverflow.com/questions/692000/how-do-i-write-standard-error-to-a-file-while-using-tee-with-a-pipe
 
 if [[ $bam == 'true' ]]; then
     samtools view -h -d dx:1 $output_directory/basecall.bam > $output_directory/duplexreads-$model.bam
@@ -102,6 +103,11 @@ if [[ $bam == 'true' ]]; then
 else
     samtools view -h -d dx:1 $output_directory/basecall.bam | samtools fastq > $output_directory/duplexreads-$model.fastq
     samtools view -h -d dx:0 $output_directory/basecall.bam | samtools fastq > $output_directory/simplexreads-$model.fastq
+fi
+
+#cleanup
+if [ -f $output_directory/basecall.bam ]; then
+    rm $output_directory/basecall.bam
 fi
 
 # demux the simplex.bam and duplex.bam separately
