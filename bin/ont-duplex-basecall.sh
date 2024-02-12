@@ -57,29 +57,14 @@ fi
 # check for output directory, make it same level as the main run folder, e.g. parent of pod5 dir
 run_directory=$(dirname $podpath)
 output_directory=$(dirname $podpath)/duplex-basecall-$model
-mkdir -p "$output_directory"
-
 npod5files=$(find $podpath -name "*.pod5" | wc -l | tr -d ' ') 
 
 [ -d $output_directory ] && \
-echo -e "Basecalled folder exists, will be deleted ...\n=============================="
-# read -p "Continue (y/n)?" choice
-# case "$choice" in 
-#   y|Y ) rm -rf $output_directory;;
-#   n|N ) echo "Exiting.." && exit 1;;
-#   * ) echo "Creating output directory: $(realpath $output_directory)";;
-# esac
+echo -e "Basecalled folder exists, will be deleted ...\n==============================" &&
+rm -rf $output_directory
 
+mkdir -p "$output_directory"
 
-
-
-if [[ $bam == 'true' ]]; then
-    outfile="reads-$model.bam"
-    emit=""
-else
-    outfile="reads-$model.fastq"
-    emit="--emit-fastq"
-fi
 
 if [[ $recurs == 'true' ]]; then
     rec="-r"
@@ -91,6 +76,7 @@ if [ -z "$kit" ]; then
     demux=false
 else
     demux=true
+    bam=true # enforce bam because dorado demux needs it
 fi
 
 SECONDS=0
@@ -111,10 +97,44 @@ echo "------------------------"
 dorado duplex $rec $model $podpath > $output_directory/basecall.bam
 
 if [[ $bam == 'true' ]]; then
-    samtools view -h -d dx:1 $output_directory/basecall.bam > $output_directory/duplex.bam
-    samtools view -h -d dx:0 $output_directory/basecall.bam > $output_directory/simplex.bam
+    samtools view -h -d dx:1 $output_directory/basecall.bam > $output_directory/duplexreads-$model.bam
+    samtools view -h -d dx:0 $output_directory/basecall.bam > $output_directory/simplexreads-$model.bam
 else
-    samtools view -h -d dx:1 $output_directory/basecall.bam | samtools fastq > $output_directory/duplex.fastq
-    samtools view -h -d dx:0 $output_directory/basecall.bam | samtools fastq > $output_directory/simplex.fastq
+    samtools view -h -d dx:1 $output_directory/basecall.bam | samtools fastq > $output_directory/duplexreads-$model.fastq
+    samtools view -h -d dx:0 $output_directory/basecall.bam | samtools fastq > $output_directory/simplexreads-$model.fastq
 fi
 
+# demux the simplex.bam and duplex.bam separately
+
+if [[ $demux == 'true' ]]; then
+    dorado demux --output-dir $output_directory/duplex --kit-name $kit --emit-fastq $output_directory/duplexreads-$model.bam && \
+    rm $output_directory/duplexreads-$model.bam || echo "ERROR: Failed to do demultiplexing"
+
+    dorado demux --output-dir $output_directory/simplex --kit-name $kit --emit-fastq $output_directory/simplexreads-$model.bam && \
+    rm $output_directory/simplexreads-$model.bam || echo "ERROR: Failed to do demultiplexing"
+fi
+
+echo "------------------------"
+echo "[$(date +"%Y-%m-%d %H:%M:%S")] - finished duplex basecalling of ${npod5files} files, data is in $(realpath $output_directory)" | \
+tee -a $output_directory/0_basecall.log
+echo "Elapsed time: $SECONDS seconds" | tee -a $output_directory/0_basecall.log
+echo "------------------------"
+
+# if we want to mimic the output of MinKNOW realtime basecalling, we have to make a directory for each barcode and put the file there
+if [ $folders == 'true' -a $demux == 'true' ]; then
+    echo "[$(date +"%Y-%m-%d %H:%M:%S")] - moving files to barcode folders" | tee -a $output_directory/0_basecall.log    
+    for i in $output_directory/duplex/*.fastq; do
+        bc=$(basename $i .fastq | cut -d_ -f2); 
+        bcdir=$(dirname $i)/$bc; 
+        mkdir -p $bcdir && mv $i $bcdir/; 
+    done
+
+    for i in $output_directory/simplex/*.fastq; do
+        bc=$(basename $i .fastq | cut -d_ -f2); 
+        bcdir=$(dirname $i)/$bc; 
+        mkdir -p $bcdir && mv $i $bcdir/; 
+    done
+
+fi
+
+echo "[$(date +"%Y-%m-%d %H:%M:%S")] - done!" | tee -a $output_directory/0_basecall.log
