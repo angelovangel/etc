@@ -12,7 +12,8 @@
 
 usage="$(basename "$0") [-m model] [-p pod5] [-k kit] [-r] [-b] [-f] [-h]
 
-Duplex basecall and optionally demultiplex pod5 files using dorado.
+Duplex basecall and optionally demultiplex pod5 files using dorado. 
+Results folder (named basecall-duplex-model) will be in the path of the selected pod5 folder
 Options:
     -m  (required) dorado model, either fast, hac, or sup
     -p  (required) path to ONT pod5 folder
