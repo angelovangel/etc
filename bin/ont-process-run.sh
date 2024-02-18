@@ -62,7 +62,8 @@ infile_ext=${infile##*.}
 if [ ${infile##*.} == 'xlsx' ]; then
     echo 'Excel file provided, will be converted to csv ...'
     excel2csv.R $infile &&
-    csvfile=$(basename $infile .$infile_ext).csv && 
+    #csvfile=$(basename $infile .$infile_ext).csv && 
+    csvfile=$(dirname $infile)/$(basename $infile .$infile_ext).csv
     echo -e "CSV file generated ==> ${csvfile} \n================================================================" ||
     echo 'Converting Excel to csv failed...!'
 else
