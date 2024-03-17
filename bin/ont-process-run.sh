@@ -103,9 +103,9 @@ fi
 counter=0
 while IFS="," read line; do
     [ -z "$line" ] && continue # skip empty lines
-    samplename=$(echo $line | cut -f $samplename_idx -d, | tr -d " ") # also trim white spaces from sample names
-    barcode=$(echo $line | cut -f $barcode_idx -d, | tr -d " ") # also trim white spaces from bc names
-    currentdir=${fastqpath}/${barcode// /}
+    samplename=$(echo $line | cut -f $samplename_idx -d, | tr -d " " | tr -d '\r') # also trim white spaces from sample names
+    barcode=$(echo $line | cut -f $barcode_idx -d, | tr -d " " | tr -d '\r') # also trim white spaces from bc names
+    currentdir=$fastqpath/$barcode
     # skip header and if barcode or sample is NA 
     if [[ $barcode == 'barcode' ]] || [[ $barcode == 'NA' ]] || [[ $samplename == 'NA' ]]; then
         echo "skipping $line"
@@ -119,7 +119,7 @@ while IFS="," read line; do
     [ "$(ls -A $currentdir)" ] && 
     echo "merging ${samplename} ----- ${barcode}" && 
     cat $currentdir/*.fastq.gz > $processed/fastq/${prefix}_${samplename}.fastq.gz ||
-    echo folder ${currentdir} not found or empty!
+    echo folder $currentdir not found or empty!
 done < $csvfile
 
 nsamples=$(ls -A $processed/fastq/*.fastq.gz | wc -l)
