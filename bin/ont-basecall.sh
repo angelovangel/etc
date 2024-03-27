@@ -56,7 +56,8 @@ else
 fi
 # check for output directory, make it same level as the main run folder, e.g. parent of pod5 dir
 run_directory=$(dirname $podpath)
-output_directory=$(dirname $podpath)/basecall-$model
+model_prefix=$(basename $model | cut -d_ -f1,2)
+output_directory=$(dirname $podpath)/basecall-$model_prefix
 
 [ -d $output_directory ] && \
 echo -e "Basecalled folder exists, will be deleted ...\n=============================="
@@ -72,10 +73,10 @@ npod5files=$(find $podpath -name "*.pod5" | wc -l | tr -d ' ')
 mkdir -p "$output_directory"
 
 if [[ $bam == 'true' ]]; then
-    outfile="reads-$model.bam"
+    outfile="reads-$model_prefix.bam"
     emit=""
 else
-    outfile="reads-$model.fastq"
+    outfile="reads-$model_prefix.fastq"
     emit="--emit-fastq"
 fi
 
@@ -103,10 +104,12 @@ if [[ $demux == 'false' ]]; then
     echo -e "[$(date +"%Y-%m-%d %H:%M:%S")] - starting basecalling (${model} model), using dorado version ${dorado_version}" | \
     tee -a $output_directory/0_basecall.log
     echo -e "[$(date +"%Y-%m-%d %H:%M:%S")] - found ${npod5files} pod5 files" | tee -a $output_directory/0_basecall.log
+    echo -e "[$(date +"%Y-%m-%d %H:%M:%S")] - output directory is ${output_directory}" | tee -a $output_directory/0_basecall.log
 else
     echo -e "[$(date +"%Y-%m-%d %H:%M:%S")] - starting basecalling (${model} model) and demultiplexing (${kit}), using dorado version ${dorado_version}" | \
     tee -a $output_directory/0_basecall.log
     echo -e "[$(date +"%Y-%m-%d %H:%M:%S")] - found ${npod5files} pod5 files" | tee -a $output_directory/0_basecall.log
+    echo -e "[$(date +"%Y-%m-%d %H:%M:%S")] - output directory is ${output_directory}" | tee -a $output_directory/0_basecall.log
 fi
 echo "------------------------"
 
