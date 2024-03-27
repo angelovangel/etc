@@ -130,12 +130,13 @@ tee -a $output_directory/0_basecall.log
 echo "------------------------"
 
 # if we want to mimic the output of MinKNOW realtime basecalling, we have to make a directory for each barcode and put the file there
+# in addition the files have to be gzipped
 if [ $folders == 'true' -a $demux == 'true' ]; then
     echo "[$(date +"%Y-%m-%d %H:%M:%S")] - moving files to barcode folders" | tee -a $output_directory/0_basecall.log    
     for i in $output_directory/*.fastq; do
         bc=$(basename $i .fastq | cut -d_ -f2); 
         bcdir=$(dirname $i)/$bc; 
-        mkdir -p $bcdir && mv $i $bcdir/; 
+        mkdir -p $bcdir && mv $i $bcdir/ && pigz $bcdir/*.fastq; 
     done
 fi
 
