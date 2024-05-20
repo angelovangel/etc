@@ -29,11 +29,14 @@ Options:
     -c  (required) a path to a csv or Excel file with columns 'sample' and 'barcode', in any order
     -p  (required) path to ONT fastq_pass folder
     -r  (optional flag) generate faster-report html file
+    -d  (optional flag) use docker to generate faster-report.html. Use only together with the -r option.
     -n  (optional) non-barcoded run - use barcode00 in samplesheet"
 
 makereport=false
+usedocker=false
+nonbc=false
 
-while getopts :hrnc:p: flag
+while getopts :hrdnc:p: flag
 do
    case "${flag}" in
       h) echo "$usage"; exit;;
@@ -41,6 +44,7 @@ do
       p) fastqpath=${OPTARG};;
       r) makereport=true;;
       n) nonbc=true;;
+      d) usedocker=true;;
       :) printf "missing argument for -%s\n" "$OPTARG" >&2; echo "$usage" >&2; exit 1;;
      \?) printf "illegal option: -%s\n" "$OPTARG" >&2; echo "$usage" >&2; exit 1;;
    esac
@@ -126,18 +130,30 @@ nsamples=$(ls -A $processed/fastq/*.fastq.gz | wc -l)
 [ "$(ls -A $processed/fastq/*.fastq.gz)" ] &&
 echo -e '================================================================' &&
 echo "Running faster on $nsamples samples ..." && 
+echo -e '================================================================' &&
 echo -e "file\treads\tbases\tn_bases\tmin_len\tmax_len\tmean_len\tQ1\tQ2\tQ3\tN50\tQ20_percent\tQ30_percent" > $processed/fastq-stats.tsv &&
 parallel -k faster -ts ::: $processed/fastq/*.fastq.gz >> $processed/fastq-stats.tsv || 
 echo "No fastq files found"
 
 
-if [[ $makereport == 'true' ]] && [[ $(command -v faster-report.R) ]]; then
+if [[ $makereport == 'true' ]] && [[ $(command -v faster-report.R) ]] && [[ $usedocker != 'true' ]]; then
     [ "$(ls -A $processed/fastq/*.fastq.gz)" ] &&
     echo -e 'Running faster-report.R ...\n================================================================' && 
     faster-report.R -p $(realpath $processed/fastq) &&
     mv faster-report.html $processed/faster-report.html ||
-    echo "No fastq files found"
+    echo "faster-report failed!"
 fi
+
+if [[ $makereport == 'true' ]] && [[ $usedocker == 'true' ]]; then
+    [ "$(ls -A $processed/fastq/*.fastq.gz)" ] &&
+    echo -e 'Running docker image aangeloo/faster-report ...\n================================================================'
+    docker run -it \
+        --mount type=bind,src="$HOME",target="$HOME" \
+        -w $(realpath $processed) \
+        aangeloo/faster-report \
+        -p $(realpath $processed/fastq) 
+fi
+
 
 echo -e "================================================================\nDone!"
 
