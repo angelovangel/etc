@@ -146,8 +146,8 @@ fi
 
 if [[ $makereport == 'true' ]] && [[ $usedocker == 'true' ]]; then
     [ "$(ls -A $processed/fastq/*.fastq.gz)" ] &&
-    echo -e 'Running docker image aangeloo/faster-report ...\n================================================================'
-    docker run -it \
+    echo -e 'Running docker aangeloo/faster-report ...\n================================================================'
+    docker run \
         --mount type=bind,src="$HOME",target="$HOME" \
         -w $(realpath $processed) \
         aangeloo/faster-report \
