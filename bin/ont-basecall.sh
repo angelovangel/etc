@@ -117,7 +117,7 @@ if [[ $demux == 'true' ]]; then # piping is dangerous, so separate basecall and 
     #dorado basecaller --min-qscore 7 $rec --kit-name $kit --barcode-both-ends --trim 'adapters' $model $podpath | \
     #dorado demux $emit --no-classify --output-dir $output_directory
     dorado basecaller --min-qscore 7 $rec --kit-name $kit --barcode-both-ends $trim $model $podpath > $output_directory/temp.bam &&
-    dorado demux $emit --no-classify --output-dir $output_directory $output_directory/temp.bam && \
+    dorado demux $emit --no-classify --output-dir $output_directory/demux $output_directory/temp.bam && \
     rm $output_directory/temp.bam || echo "ERROR: Failed to do basecalling/demultiplexing"
 else
     dorado basecaller --min-qscore 7 $rec $emit $trim $model $podpath > $output_directory/$outfile
@@ -133,7 +133,7 @@ echo "------------------------"
 # in addition the files have to be gzipped
 if [ $folders == 'true' -a $demux == 'true' ]; then
     echo "[$(date +"%Y-%m-%d %H:%M:%S")] - moving files to barcode folders" | tee -a $output_directory/0_basecall.log    
-    for i in $output_directory/*.fastq; do
+    for i in $output_directory/demux/*.fastq; do
         bc=$(basename $i .fastq | cut -d_ -f2); 
         bcdir=$(dirname $i)/$bc; 
         mkdir -p $bcdir && mv $i $bcdir/ && pigz $bcdir/*.fastq; 
