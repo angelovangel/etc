@@ -116,11 +116,11 @@ echo "------------------------"
 if [[ $demux == 'true' ]]; then # piping is dangerous, so separate basecall and demux
     #dorado basecaller --min-qscore 7 $rec --kit-name $kit --barcode-both-ends --trim 'adapters' $model $podpath | \
     #dorado demux $emit --no-classify --output-dir $output_directory
-    dorado basecaller --min-qscore 7 $rec --kit-name $kit --barcode-both-ends $trim $model $podpath > $output_directory/temp.bam &&
+    dorado basecaller --min-qscore 10 $rec --kit-name $kit --barcode-both-ends $trim $model $podpath > $output_directory/temp.bam &&
     dorado demux $emit --no-classify --output-dir $output_directory/demux $output_directory/temp.bam && \
     rm $output_directory/temp.bam || echo "ERROR: Failed to do basecalling/demultiplexing"
 else
-    dorado basecaller --min-qscore 7 $rec $emit $trim $model $podpath > $output_directory/$outfile
+    dorado basecaller --min-qscore 10 $rec $emit $trim $model $podpath > $output_directory/$outfile
 fi
 
 echo "------------------------"
