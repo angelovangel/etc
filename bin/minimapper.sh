@@ -39,7 +39,7 @@ echo $samplename
 #echo $processors
 #exit 2 
 
-minimap2 -t $processors -ax lr:hq --secondary=no $1 $2 > $samplename.sam
+minimap2 -t $processors -ax lr:hq --secondary=no --eqx $1 $2 > $samplename.sam
 
 SAMFILE=$samplename.sam
 if [ -f "$SAMFILE" ]; then
