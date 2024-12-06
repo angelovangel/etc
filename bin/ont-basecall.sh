@@ -137,7 +137,9 @@ echo "------------------------"
 if [ $folders == 'true' -a $demux == 'true' ]; then
     echo "[$(date +"%Y-%m-%d %H:%M:%S")] - moving files to barcode folders" | tee -a $output_directory/0_basecall.log    
     for i in $output_directory/demux/*.fastq; do
-        bc=$(basename $i .fastq | cut -d_ -f2); 
+        # file name ends in _barcode01.fastq, but can be preceeded by unknown number of fields 
+        bc=$(echo $(basename $i) | awk -F "_" '{print $NF}' | cut -d. -f1)
+        #bc=$(basename $i .fastq | cut -d_ -f2); 
         bcdir=$(dirname $i)/$bc; 
         mkdir -p $bcdir && mv $i $bcdir/ && pigz $bcdir/*.fastq; 
     done
