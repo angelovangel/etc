@@ -15,18 +15,20 @@ Options:
     -r  (optional flag) find pod5 files recursively
     -b  (optional flag) save reads in bam files, (fastq.gz by default)
     -t  (optional flag) trim adapters
+    -q  (optional) filter by minimum read q-score (default 10)
     -f  (optional flag) save reads in barcodeXX folders (mimic MinKNOW output)"
 
 recurs=false
 bam=false
 folders=false
 trimmer=false
+qfilter=10
 
 unset -v model
 unset -v podpath
 unset -v kit
 
-while getopts :hrbftm:p:k: flag
+while getopts :hrbftm:p:k:q: flag
 do
    case "${flag}" in
       h) echo "$usage"; exit;;
@@ -36,6 +38,7 @@ do
       r) recurs=true;;
       b) bam=true;;
       t) trimmer=true;;
+      q) qfilter=${OPTARG};;
       f) folders=true;;
       :) printf "missing argument for -%s\n" "$OPTARG" >&2; echo "$usage" >&2; exit 1;;
      \?) printf "illegal option: -%s\n" "$OPTARG" >&2; echo "$usage" >&2; exit 1;;
@@ -101,12 +104,12 @@ fi
 SECONDS=0
 echo "------------------------"
 if [[ $demux == 'false' ]]; then
-    echo -e "[$(date +"%Y-%m-%d %H:%M:%S")] - starting basecalling (${model} model), using dorado version ${dorado_version}" | \
+    echo -e "[$(date +"%Y-%m-%d %H:%M:%S")] - starting basecalling (${model} model, q-score filter ${qfilter}), using dorado version ${dorado_version}" | \
     tee -a $output_directory/0_basecall.log
     echo -e "[$(date +"%Y-%m-%d %H:%M:%S")] - found ${npod5files} pod5 files" | tee -a $output_directory/0_basecall.log
     echo -e "[$(date +"%Y-%m-%d %H:%M:%S")] - output directory is ${output_directory}" | tee -a $output_directory/0_basecall.log
 else
-    echo -e "[$(date +"%Y-%m-%d %H:%M:%S")] - starting basecalling (${model} model) and demultiplexing (${kit}), using dorado version ${dorado_version}" | \
+    echo -e "[$(date +"%Y-%m-%d %H:%M:%S")] - starting basecalling (${model} model, q-score filter ${qfilter}) and demultiplexing (${kit}), using dorado version ${dorado_version}" | \
     tee -a $output_directory/0_basecall.log
     echo -e "[$(date +"%Y-%m-%d %H:%M:%S")] - found ${npod5files} pod5 files" | tee -a $output_directory/0_basecall.log
     echo -e "[$(date +"%Y-%m-%d %H:%M:%S")] - output directory is ${output_directory}" | tee -a $output_directory/0_basecall.log
@@ -116,11 +119,11 @@ echo "------------------------"
 if [[ $demux == 'true' ]]; then # piping is dangerous, so separate basecall and demux
     #dorado basecaller --min-qscore 7 $rec --kit-name $kit --barcode-both-ends --trim 'adapters' $model $podpath | \
     #dorado demux $emit --no-classify --output-dir $output_directory
-    dorado basecaller --min-qscore 10 $rec --kit-name $kit --barcode-both-ends $trim $model $podpath > $output_directory/temp.bam &&
+    dorado basecaller --min-qscore $qfilter $rec --kit-name $kit --barcode-both-ends $trim $model $podpath > $output_directory/temp.bam &&
     dorado demux $emit --no-classify --output-dir $output_directory/demux $output_directory/temp.bam && \
     rm $output_directory/temp.bam || echo "ERROR: Failed to do basecalling/demultiplexing"
 else
-    dorado basecaller --min-qscore 10 $rec $emit $trim $model $podpath > $output_directory/$outfile
+    dorado basecaller --min-qscore $qfilter $rec $emit $trim $model $podpath > $output_directory/$outfile
 fi
 
 echo "------------------------"
@@ -134,7 +137,9 @@ echo "------------------------"
 if [ $folders == 'true' -a $demux == 'true' ]; then
     echo "[$(date +"%Y-%m-%d %H:%M:%S")] - moving files to barcode folders" | tee -a $output_directory/0_basecall.log    
     for i in $output_directory/demux/*.fastq; do
-        bc=$(basename $i .fastq | cut -d_ -f2); 
+        # file name ends in _barcode01.fastq, but can be preceeded by unknown number of fields 
+        bc=$(echo $(basename $i) | awk -F "_" '{print $NF}' | cut -d. -f1)
+        #bc=$(basename $i .fastq | cut -d_ -f2); 
         bcdir=$(dirname $i)/$bc; 
         mkdir -p $bcdir && mv $i $bcdir/ && pigz $bcdir/*.fastq; 
     done
