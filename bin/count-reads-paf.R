@@ -14,6 +14,12 @@ option_list <- list(
     default = 60,
     help = "Filter alignments on mapq [default = 60]"),
   make_option(
+    c("-f", "--fraction"), 
+    type = 'double', 
+    default = 0.5, 
+    help = "Filter alignments by length (proportion of target len)"
+  ),
+  make_option(
     c('-p', '--paf'), 
     type = 'character', 
     action = 'store', 
@@ -33,7 +39,7 @@ bname <- tools::file_path_sans_ext(basename(opts$paf))
 
 headers <- c(
   'query', 'query_len', 'query_start', 'query_end', 'strand', 
-  'target', 'target_len', 'target_start', 'tartget_end', 'num_matches', 'align_len', 'mapq'
+  'target', 'target_len', 'target_start', 'target_end', 'num_matches', 'align_len', 'mapq'
   )
 
 df <- vroom::vroom(paf, col_names = headers, col_select = all_of(headers))
@@ -42,8 +48,9 @@ df <- vroom::vroom(paf, col_names = headers, col_select = all_of(headers))
 tbl <- 
   df %>%
   dplyr::filter(mapq >= opts$mapq) %>%
+  dplyr::filter(align_len/target_len >= opts$fraction) %>%
   group_by(query) %>%
-  mutate(acc = num_matches/align_len) %>% 
+  #mutate(acc = num_matches/align_len) %>% 
   dplyr::filter(row_number() == 1) %>% 
   group_by(target) %>% 
   reframe(target, n =n()) %>% 
@@ -51,9 +58,10 @@ tbl <-
   mutate(frac = n/sum(n)) %>%
   arrange(desc(n))
 
-write.csv(tbl, file = file.path(bdir, paste0(bname, '.csv')), row.names = F, quote = FALSE)
+csvfile <- file.path(bdir, paste0(bname, '.csv'))
+write.csv(tbl, file = csvfile, row.names = F, quote = FALSE)
 
-print(paste0('CSV file written to: ', bdir))
-print(paste0('Total reads: ', sum(tbl$n, na.rm = T)))
-print(paste0('Total targets: ', length(unique(tbl$target))))
+print(paste0('CSV file written: ', csvfile))
+print(paste0('Total alignments written: ', sum(tbl$n, na.rm = T)))
+print(paste0('Total targets: ', length(unique(tbl$target)), " (out of ", length(unique(df$target)), ")"))
 
