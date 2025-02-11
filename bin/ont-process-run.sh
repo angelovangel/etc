@@ -50,6 +50,16 @@ do
    esac
 done
 
+# instread of having to supply samplesheet in nonbc runs, just make it here
+# use -c to give samples name
+if [ $nonbc == 'true' ]; then
+    temp_file=$(mktemp)
+    mv $temp_file $temp_file.csv
+    echo "sample,barcode" > $temp_file.csv
+    echo "$infile,barcode00" >> $temp_file.csv
+    infile=$temp_file.csv
+fi
+
 # mandatory arguments
 if [ ! "$infile" ] || [ ! "$fastqpath" ]; then
   echo "arguments -c and -p must be provided"
@@ -57,7 +67,7 @@ if [ ! "$infile" ] || [ ! "$fastqpath" ]; then
 fi
 
 if [[ ! -f ${infile} ]] || [[ ! -d ${fastqpath} ]]; then
-    echo "File ${infile} or ${fastqpath} does not exist" >&2
+    echo "File ${infile} or directory ${fastqpath} does not exist" >&2
     exit 2
 fi
 
@@ -126,6 +136,12 @@ while IFS="," read line; do
     echo folder $currentdir not found or empty!
 done < $csvfile
 
+# if non-barcoded, repair the barcode00 back to original
+if [[ $nonbc == 'true' ]] && [[ $(ls -A $fastqpath/barcode00/*.fastq.gz) ]]; then
+    echo -e "Non-barcoded run, will move files in $fastqpath/barcode00 back...\n================================================================"
+    mv $fastqpath/barcode00/*.fastq.gz $fastqpath/ && rm -r $fastqpath/barcode00
+fi
+
 nsamples=$(ls -A $processed/fastq/*.fastq.gz | wc -l)
 [ "$(ls -A $processed/fastq/*.fastq.gz)" ] &&
 echo -e '================================================================' &&
@@ -153,7 +169,6 @@ if [[ $makereport == 'true' ]] && [[ $usedocker == 'true' ]]; then
         aangeloo/faster-report \
         -p $(realpath $processed/fastq) 
 fi
-
 
 echo -e "================================================================\nDone!"
 
