@@ -11,8 +11,8 @@ option_list <- list(
   make_option(
     c("-m", "--mapq"), 
     type = 'integer', 
-    default = 60,
-    help = "Filter alignments on mapq [default = 60]"),
+    default = 0,
+    help = "Filter alignments on mapq [default = 0]"),
   make_option(
     c("-f", "--fraction"), 
     type = 'double', 
@@ -51,7 +51,8 @@ tbl <-
   dplyr::filter(align_len/target_len >= opts$fraction) %>%
   group_by(query) %>%
   #mutate(acc = num_matches/align_len) %>% 
-  dplyr::filter(row_number() == 1) %>% 
+  arrange(desc(num_matches)) %>% # take the best alignment for each read
+  dplyr::filter(row_number() == 1) %>% # take the best alignment for each read
   group_by(target) %>% 
   reframe(target, n =n()) %>% 
   unique() %>% 
@@ -62,6 +63,8 @@ csvfile <- file.path(bdir, paste0(bname, '.csv'))
 write.csv(tbl, file = csvfile, row.names = F, quote = FALSE)
 
 print(paste0('CSV file written: ', csvfile))
-print(paste0('Total alignments written: ', sum(tbl$n, na.rm = T)))
+print(paste0('Total alignments written: ', sum(tbl$n, na.rm = T), " (out of ", nrow(df), ")"))
+print(paste0('Kept ', round(sum(tbl$n, na.rm = T)/nrow(df)*100, 2), ' % of the original alignments'))
 print(paste0('Total targets: ', length(unique(tbl$target)), " (out of ", length(unique(df$target)), ")"))
+
 
