@@ -16,8 +16,8 @@ option_list <- list(
   make_option(
     c("-f", "--fraction"), 
     type = 'double', 
-    default = 0.5, 
-    help = "Filter alignments by length (proportion of target len)"
+    default = 0.8, 
+    help = "Filter alignments by length (proportion of read len)"
   ),
   make_option(
     c('-p', '--paf'), 
@@ -44,11 +44,12 @@ headers <- c(
 
 df <- vroom::vroom(paf, col_names = headers, col_select = all_of(headers))
 # mapq is not good for filtering 16S alignments - https://github.com/lh3/minimap2/issues/223
+totalalmnts <- nrow(df)
 
 tbl <- 
   df %>%
   dplyr::filter(mapq >= opts$mapq) %>%
-  dplyr::filter(align_len/target_len >= opts$fraction) %>%
+  dplyr::filter(align_len/query_len >= opts$fraction) %>%
   group_by(query) %>%
   #mutate(acc = num_matches/align_len) %>% 
   arrange(desc(num_matches)) %>% # take the best alignment for each read
@@ -63,8 +64,8 @@ csvfile <- file.path(bdir, paste0(bname, '.csv'))
 write.csv(tbl, file = csvfile, row.names = F, quote = FALSE)
 
 print(paste0('CSV file written: ', csvfile))
-print(paste0('Total alignments written: ', sum(tbl$n, na.rm = T), " (out of ", nrow(df), ")"))
-print(paste0('Kept ', round(sum(tbl$n, na.rm = T)/nrow(df)*100, 2), ' % of the original alignments'))
+print(paste0('Total alignments written: ', sum(tbl$n, na.rm = T), " (out of ", totalalmnts, ")"))
+print(paste0('Kept ', round(sum(tbl$n, na.rm = T)/totalalmnts*100, 2), ' % of the original alignments'))
 print(paste0('Total targets: ', length(unique(tbl$target)), " (out of ", length(unique(df$target)), ")"))
 
 
