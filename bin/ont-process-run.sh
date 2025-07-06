@@ -120,8 +120,9 @@ while IFS="," read line; do
     samplename=$(echo $line | cut -f $samplename_idx -d, | tr -d " " | tr -d '\r') # also trim white spaces from sample names
     barcode=$(echo $line | cut -f $barcode_idx -d, | tr -d " " | tr -d '\r') # also trim white spaces from bc names
     currentdir=$fastqpath/$barcode
-    # skip header and if barcode or sample is NA 
-    if [[ $barcode == 'barcode' ]] || [[ $barcode == 'NA' ]] || [[ $samplename == 'NA' ]]; then
+    # skip header and if barcode or sample is NA or empty!
+    # [[ -z "${var//[[:space:]]/}" ]] is used to check if barcode is empty or contains only spaces
+    if [[ $barcode == 'barcode' ]] || [[  -z "${barcode//[[:space:]]/}" ]] || [[ $barcode == 'NA' ]] || [[ $samplename == 'NA' ]]; then
         echo "skipping $line"
         continue
     fi
