@@ -117,11 +117,10 @@ fi
 echo "------------------------"
 
 if [[ $demux == 'true' ]]; then # piping is dangerous, so separate basecall and demux
-    #dorado basecaller --min-qscore 7 $rec --kit-name $kit --barcode-both-ends --trim 'adapters' $model $podpath | \
-    #dorado demux $emit --no-classify --output-dir $output_directory
-    dorado basecaller --min-qscore $qfilter $rec --kit-name $kit --barcode-both-ends $trim $model $podpath > $output_directory/temp.bam &&
-    dorado demux $emit --no-classify --output-dir $output_directory/demux $output_directory/temp.bam && \
-    rm $output_directory/temp.bam || echo "ERROR: Failed to do basecalling/demultiplexing"
+    tempbam=$(mktemp)
+    dorado basecaller --min-qscore $qfilter $rec --kit-name $kit --barcode-both-ends $trim $model $podpath > $tempbam &&
+    dorado demux $emit --no-classify --output-dir $output_directory $tempbam && \
+    rm $tempbam || echo "ERROR: Failed to do basecalling/demultiplexing"
 else
     dorado basecaller --min-qscore $qfilter $rec $emit $trim $model $podpath > $output_directory/$outfile
 fi
@@ -136,7 +135,7 @@ echo "------------------------"
 # in addition the files have to be gzipped
 if [ $folders == 'true' -a $demux == 'true' ]; then
     echo "[$(date +"%Y-%m-%d %H:%M:%S")] - moving files to barcode folders" | tee -a $output_directory/0_basecall.log    
-    for i in $output_directory/demux/*.fastq; do
+    for i in $output_directory/*.fastq; do
         # file name ends in _barcode01.fastq, but can be preceeded by unknown number of fields 
         bc=$(echo $(basename $i) | awk -F "_" '{print $NF}' | cut -d. -f1)
         #bc=$(basename $i .fastq | cut -d_ -f2); 
