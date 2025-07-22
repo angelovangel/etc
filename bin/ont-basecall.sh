@@ -28,6 +28,10 @@ unset -v model
 unset -v podpath
 unset -v kit
 
+timestamp() {
+    echo "[$(date +"%Y-%m-%d %H:%M:%S")]"
+}
+
 while getopts :hrbftm:p:k:q: flag
 do
    case "${flag}" in
@@ -104,15 +108,15 @@ fi
 SECONDS=0
 echo "------------------------"
 if [[ $demux == 'false' ]]; then
-    echo -e "[$(date +"%Y-%m-%d %H:%M:%S")] - starting basecalling (${model} model, q-score filter ${qfilter}), using dorado version ${dorado_version}" | \
+    echo -e "$(timestamp) - starting basecalling (${model} model, q-score filter ${qfilter}), using dorado version ${dorado_version}" | \
     tee -a $output_directory/0_basecall.log
-    echo -e "[$(date +"%Y-%m-%d %H:%M:%S")] - found ${npod5files} pod5 files" | tee -a $output_directory/0_basecall.log
-    echo -e "[$(date +"%Y-%m-%d %H:%M:%S")] - output directory is ${output_directory}" | tee -a $output_directory/0_basecall.log
+    echo -e "$(timestamp) - found ${npod5files} pod5 files" | tee -a $output_directory/0_basecall.log
+    echo -e "$(timestamp) - output directory is ${output_directory}" | tee -a $output_directory/0_basecall.log
 else
-    echo -e "[$(date +"%Y-%m-%d %H:%M:%S")] - starting basecalling (${model} model, q-score filter ${qfilter}) and demultiplexing (${kit}), using dorado version ${dorado_version}" | \
+    echo -e "$(timestamp) - starting basecalling (${model} model, q-score filter ${qfilter}) and demultiplexing (${kit}), using dorado version ${dorado_version}" | \
     tee -a $output_directory/0_basecall.log
-    echo -e "[$(date +"%Y-%m-%d %H:%M:%S")] - found ${npod5files} pod5 files" | tee -a $output_directory/0_basecall.log
-    echo -e "[$(date +"%Y-%m-%d %H:%M:%S")] - output directory is ${output_directory}" | tee -a $output_directory/0_basecall.log
+    echo -e "$(timestamp) - found ${npod5files} pod5 files" | tee -a $output_directory/0_basecall.log
+    echo -e "$(timestamp) - output directory is ${output_directory}" | tee -a $output_directory/0_basecall.log
 fi
 echo "------------------------"
 
@@ -120,6 +124,7 @@ if [[ $demux == 'true' ]]; then # piping is dangerous, so separate basecall and 
     tempbam=$(mktemp)
     dorado basecaller --min-qscore $qfilter $rec --kit-name $kit --barcode-both-ends $trim $model $podpath > $tempbam &&
     dorado demux $emit --no-classify --output-dir $output_directory $tempbam && \
+    echo -e $(timestamp) - bam head: $(samtools head $tempbam | grep "@PG") | tee -a $output_directory/0_basecall.log && \
     rm $tempbam || echo "ERROR: Failed to do basecalling/demultiplexing"
 else
     dorado basecaller --min-qscore $qfilter $rec $emit $trim $model $podpath > $output_directory/$outfile
@@ -127,14 +132,14 @@ fi
 
 echo "------------------------"
 echo "Elapsed time: $SECONDS seconds"
-echo "[$(date +"%Y-%m-%d %H:%M:%S")] - finished basecalling of ${npod5files} files, data is in $(realpath $output_directory)" | \
+echo "$(timestamp) - finished basecalling of ${npod5files} files, data is in $(realpath $output_directory)" | \
 tee -a $output_directory/0_basecall.log
 echo "------------------------"
 
 # if we want to mimic the output of MinKNOW realtime basecalling, we have to make a directory for each barcode and put the file there
 # in addition the files have to be gzipped
 if [ $folders == 'true' -a $demux == 'true' ]; then
-    echo "[$(date +"%Y-%m-%d %H:%M:%S")] - moving files to barcode folders" | tee -a $output_directory/0_basecall.log    
+    echo "$(timestamp) - moving files to barcode folders" | tee -a $output_directory/0_basecall.log    
     for i in $output_directory/*.fastq; do
         # file name ends in _barcode01.fastq, but can be preceeded by unknown number of fields 
         bc=$(echo $(basename $i) | awk -F "_" '{print $NF}' | cut -d. -f1)
@@ -144,7 +149,7 @@ if [ $folders == 'true' -a $demux == 'true' ]; then
     done
 fi
 
-echo "[$(date +"%Y-%m-%d %H:%M:%S")] - done!" | tee -a $output_directory/0_basecall.log
+echo "$(timestamp) - done!" | tee -a $output_directory/0_basecall.log
 
 # clean up
 # rm -rf .temp_dorado*
