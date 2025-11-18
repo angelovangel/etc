@@ -122,7 +122,7 @@ echo "------------------------"
 
 if [[ $demux == 'true' ]]; then # piping is dangerous, so separate basecall and demux
     tempbam=$(mktemp)
-    dorado basecaller --min-qscore $qfilter $rec --kit-name $kit --barcode-both-ends $trim $model $podpath > $tempbam &&
+    dorado basecaller --min-qscore $qfilter $rec --kit-name $kit $trim $model $podpath > $tempbam &&
     dorado demux $emit --no-classify --output-dir $output_directory $tempbam && \
     echo -e $(timestamp) - bam head: $(samtools head $tempbam | grep "@PG") | tee -a $output_directory/0_basecall.log && \
     rm $tempbam || echo "ERROR: Failed to do basecalling/demultiplexing"
