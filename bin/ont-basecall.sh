@@ -14,7 +14,7 @@ Options:
     -k  (optional) barcoding kit, if used demultiplexing will be performed (SQK-NBD114-96, SQK-RBK114-96 ...)
     -r  (optional flag) find pod5 files recursively
     -b  (optional flag) save reads in bam files, (fastq.gz by default)
-    -t  (optional flag) trim adapters
+    -t  (optional flag) trim all adapters, primers and barcodes
     -q  (optional) filter by minimum read q-score (default 10)
     -f  (optional flag) save reads in barcodeXX folders (mimic MinKNOW output)"
 
@@ -94,9 +94,9 @@ else
 fi
 
 if [[ $trimmer == 'true' ]]; then
-    trim="--trim adapters"
+    trim="--trim all" # default
 else
-    trim=""
+    trim="--no-trim"
 fi
 
 if [ -z "$kit" ]; then
