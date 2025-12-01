@@ -12,15 +12,14 @@ Options:
     -m  (required) dorado model, either fast, hac, or sup
     -p  (required) path to ONT pod5 folder
     -k  (optional) barcoding kit, if used demultiplexing will be performed (SQK-NBD114-96, SQK-RBK114-96 ...)
+    -l  (optional) path to adaptive sampling decision file (with columns read_id, action, action_response). Only reads with 'action == sequence' will be basecalled.
     -r  (optional flag) find pod5 files recursively
     -b  (optional flag) save reads in bam files, (fastq.gz by default)
     -t  (optional flag) trim all adapters, primers and barcodes
-    -q  (optional) filter by minimum read q-score (default 10)
-    -f  (optional flag) save reads in barcodeXX folders (mimic MinKNOW output)"
+    -q  (optional) filter by minimum read q-score (default 10)"
 
 recurs=false
 bam=false
-folders=false
 trimmer=false
 qfilter=10
 
@@ -32,18 +31,18 @@ timestamp() {
     echo "[$(date +"%Y-%m-%d %H:%M:%S")]"
 }
 
-while getopts :hrbftm:p:k:q: flag
+while getopts :hrbtm:p:k:l:q: flag
 do
    case "${flag}" in
       h) echo "$usage"; exit;;
       m) model=${OPTARG};;
       p) podpath=${OPTARG};;
       k) kit=${OPTARG};;
+      l) decisionfile=${OPTARG};;
       r) recurs=true;;
       b) bam=true;;
       t) trimmer=true;;
       q) qfilter=${OPTARG};;
-      f) folders=true;;
       :) printf "missing argument for -%s\n" "$OPTARG" >&2; echo "$usage" >&2; exit 1;;
      \?) printf "illegal option: -%s\n" "$OPTARG" >&2; echo "$usage" >&2; exit 1;;
    esac
@@ -80,10 +79,10 @@ npod5files=$(find $podpath -name "*.pod5" | wc -l | tr -d ' ')
 mkdir -p "$output_directory"
 
 if [[ $bam == 'true' ]]; then
-    outfile="reads-$model_prefix.bam"
+    outfile="reads.bam"
     emit=""
 else
-    outfile="reads-$model_prefix.fastq"
+    outfile="reads.fastq"
     emit="--emit-fastq"
 fi
 
@@ -105,6 +104,17 @@ else
     demux=true
 fi
 
+if [ -z "$decisionfile" ]; then
+    read_ids=""
+else    
+    echo -e "$(timestamp) - filtering adaptive sampling reads" | tee -a $output_directory/0_basecall.log
+    awk -F',' '$2 == "sequence"' $decisionfile | cut -f1 -d, > $output_directory/0_reads_to_basecall.txt
+    nreads_bc=$(wc -l < $output_directory/0_reads_to_basecall.txt)
+    nreads_total=$(wc -l < $decisionfile)
+    echo -e "$(timestamp) - found $nreads_bc (out of $nreads_total) reads to basecall " | tee -a $output_directory/0_basecall.log
+    read_ids="--read-ids $output_directory/0_reads_to_basecall.txt"
+fi
+
 SECONDS=0
 echo "------------------------"
 if [[ $demux == 'false' ]]; then
@@ -121,13 +131,14 @@ fi
 echo "------------------------"
 
 if [[ $demux == 'true' ]]; then # piping is dangerous, so separate basecall and demux
-    tempbam=$(mktemp)
-    dorado basecaller --min-qscore $qfilter $rec --kit-name $kit $trim $model $podpath > $tempbam &&
-    dorado demux $emit --no-classify --output-dir $output_directory $tempbam && \
-    echo -e $(timestamp) - bam head: $(samtools head $tempbam | grep "@PG") | tee -a $output_directory/0_basecall.log && \
-    rm $tempbam || echo "ERROR: Failed to do basecalling/demultiplexing"
+    # since dorado v1.3.0 basecaller produces the MinKNOW output with --output-dir and --kit-name
+    # tempbam=$(mktemp)
+    dorado basecaller --min-qscore $qfilter $rec $emit --kit-name $kit $trim $read_ids --output-dir $output_directory $model $podpath
+    # dorado demux $emit --no-classify --output-dir $output_directory $tempbam && \
+    # echo -e $(timestamp) - bam head: $(samtools head $tempbam | grep "@PG") | tee -a $output_directory/0_basecall.log && \
+    
 else
-    dorado basecaller --min-qscore $qfilter $rec $emit $trim $model $podpath > $output_directory/$outfile
+    dorado basecaller --min-qscore $qfilter $rec $emit $trim $read_ids $model $podpath > $output_directory/$outfile
 fi
 
 echo "------------------------"
@@ -136,18 +147,22 @@ echo "$(timestamp) - finished basecalling of ${npod5files} files, data is in $(r
 tee -a $output_directory/0_basecall.log
 echo "------------------------"
 
+### This is now handled by dorado since v1.3.0
+
 # if we want to mimic the output of MinKNOW realtime basecalling, we have to make a directory for each barcode and put the file there
 # in addition the files have to be gzipped
-if [ $folders == 'true' -a $demux == 'true' ]; then
-    echo "$(timestamp) - moving files to barcode folders" | tee -a $output_directory/0_basecall.log    
-    for i in $output_directory/*.fastq; do
-        # file name ends in _barcode01.fastq, but can be preceeded by unknown number of fields 
-        bc=$(echo $(basename $i) | awk -F "_" '{print $NF}' | cut -d. -f1)
-        #bc=$(basename $i .fastq | cut -d_ -f2); 
-        bcdir=$(dirname $i)/$bc; 
-        mkdir -p $bcdir && mv $i $bcdir/ && pigz $bcdir/*.fastq; 
-    done
-fi
+# if [ $folders == 'true' -a $demux == 'true' ]; then
+#     echo "$(timestamp) - moving files to barcode folders" | tee -a $output_directory/0_basecall.log    
+#     for i in $output_directory/*.fastq; do
+#         # file name ends in _barcode01.fastq, but can be preceeded by unknown number of fields 
+#         bc=$(echo $(basename $i) | awk -F "_" '{print $NF}' | cut -d. -f1)
+#         #bc=$(basename $i .fastq | cut -d_ -f2); 
+#         bcdir=$(dirname $i)/$bc; 
+#         mkdir -p $bcdir && mv $i $bcdir/ && pigz $bcdir/*.fastq; 
+#     done
+# fi
+
+### This is now handled by dorado since v1.3.0
 
 echo "$(timestamp) - done!" | tee -a $output_directory/0_basecall.log
 
