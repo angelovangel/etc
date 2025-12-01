@@ -20,7 +20,7 @@ Options:
 
 recurs=false
 bam=false
-trimmer=false
+trimmer=false # MinKNOW is trimm OFF by default, in dorado is default ON
 qfilter=10
 
 unset -v model
@@ -93,7 +93,7 @@ else
 fi
 
 if [[ $trimmer == 'true' ]]; then
-    trim="--trim all" # default
+    trim="--trim all" # default on in dorado
 else
     trim="--no-trim"
 fi
