@@ -66,7 +66,8 @@ model_prefix=$(basename $model | cut -d_ -f1,2)
 output_directory=$(dirname $podpath)/basecall-$model_prefix
 
 [ -d $output_directory ] && \
-echo -e "Basecalled folder exists, will be deleted ...\n=============================="
+echo -e "Basecalled folder exists, will be deleted ...\n==============================" && \
+rm -rf $output_directory
 # read -p "Continue (y/n)?" choice
 # case "$choice" in 
 #   y|Y ) rm -rf $output_directory;;
