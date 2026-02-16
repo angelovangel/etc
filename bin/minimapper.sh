@@ -9,16 +9,20 @@ usage()
 }
 # options
 # -p number of processors to use
+# -d use dorado aligner instead of minimap2
 
 # output is sample.bam (sorted bam, if sample.fastq was input)
 
 # set default
 processors=4
 
-while getopts ":p:" c; do
+while getopts ":p:d" c; do
   case ${c} in
     p )
       processors=$OPTARG
+      ;;
+    d )
+      dorado=true
       ;;
     \? )
       echo "Invalid option: $OPTARG" 1>&2
@@ -39,7 +43,15 @@ echo $samplename
 #echo $processors
 #exit 2 
 
-minimap2 -t $processors -ax lr:hq --secondary=no --eqx $1 $2 > $samplename.sam
+if [ "$dorado" = true ]; then
+    dorado aligner -t $processors --mm2-opts "-x lr:hq" $1 $2 | \
+    samtools sort -@ $processors -o $samplename.align.bam - 
+    samtools index -@ $processors $samplename.align.bam
+    echo "Dorado alignment complete. Output: $samplename.align.bam"
+    exit 0
+else
+    minimap2 -t $processors -ax lr:hq --secondary=no --eqx $1 $2 > $samplename.sam
+fi
 
 SAMFILE=$samplename.sam
 if [ -f "$SAMFILE" ]; then
@@ -50,6 +62,7 @@ if [ -f "$SAMFILE" ]; then
     samtools index -@ $processors $samplename.bam
 
     rm $SAMFILE
+    echo "Minimap2 alignment complete. Output: $samplename.bam"
 else 
     echo "$SAMFILE does not exist."
     exit 2
