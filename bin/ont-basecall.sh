@@ -20,7 +20,7 @@ Options:
 
 recurs=false
 bam=false
-trimmer=false # MinKNOW is trimm OFF by default, in dorado is default ON
+trimmer=true # MinKNOW is trimm OFF by default, in dorado is default ON
 qfilter=10
 
 unset -v model
