@@ -133,13 +133,14 @@ echo "------------------------"
 
 if [[ $demux == 'true' ]]; then # piping is dangerous, so separate basecall and demux
     # since dorado v1.3.0 basecaller produces the MinKNOW output with --output-dir and --kit-name
-    # tempbam=$(mktemp)
     dorado basecaller --min-qscore $qfilter $rec $emit --kit-name $kit $trim $read_ids --output-dir $output_directory $model $podpath
-    # dorado demux $emit --no-classify --output-dir $output_directory $tempbam && \
-    # echo -e $(timestamp) - bam head: $(samtools head $tempbam | grep "@PG") | tee -a $output_directory/0_basecall.log && \
-    
 else
     dorado basecaller --min-qscore $qfilter $rec $emit $trim $read_ids $model $podpath > $output_directory/$outfile
+    fi
+
+if [[ $bam == 'false' ]]; then
+    echo "$(timestamp) - compressing fastq files" | tee -a "$output_directory/0_basecall.log"
+    find "$output_directory" -type f -name "*.fastq" -exec pigz -f {} + || true
 fi
 
 echo "------------------------"
