@@ -62,7 +62,7 @@ else
 fi
 # check for output directory, make it same level as the main run folder, e.g. parent of pod5 dir
 run_directory=$(dirname $podpath)
-model_prefix=$(basename $model | cut -d_ -f1,2)
+model_prefix=$(basename $model | cut -d_ -f1,2) | sed 's/,/_/g' # and replace comma with underscore
 output_directory=$(dirname $podpath)/basecall-$model_prefix
 
 [ -d $output_directory ] && \
