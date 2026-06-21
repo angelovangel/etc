@@ -140,7 +140,7 @@ else
 
 if [[ $bam == 'false' ]]; then
     echo "$(timestamp) - compressing fastq files" | tee -a "$output_directory/0_basecall.log"
-    find "$output_directory" -type f -name "*.fastq" -exec pigz -f {} + || true
+    find "$output_directory" -type f -name "*.fastq" -exec pigz -f {} +
 fi
 
 echo "------------------------"
