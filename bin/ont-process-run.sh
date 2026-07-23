@@ -29,14 +29,12 @@ Options:
     -c  (required) a path to a csv or Excel file with columns 'sample' and 'barcode', in any order
     -p  (required) path to ONT fastq_pass folder
     -r  (optional flag) generate faster-report html file
-    -d  (optional flag) use docker to generate faster-report.html. Use only together with the -r option.
     -n  (optional) non-barcoded run - use barcode00 in samplesheet"
 
 makereport=false
-usedocker=false
 nonbc=false
 
-while getopts :hrdnc:p: flag
+while getopts :hrnc:p: flag
 do
    case "${flag}" in
       h) echo "$usage"; exit;;
@@ -44,7 +42,6 @@ do
       p) fastqpath=${OPTARG};;
       r) makereport=true;;
       n) nonbc=true;;
-      d) usedocker=true;;
       :) printf "missing argument for -%s\n" "$OPTARG" >&2; echo "$usage" >&2; exit 1;;
      \?) printf "illegal option: -%s\n" "$OPTARG" >&2; echo "$usage" >&2; exit 1;;
    esac
@@ -93,6 +90,9 @@ echo -e "Processed folder exists, will be deleted ...\n=========================
 rm -rf $processed
 mkdir -p $processed/fastq
 cp $csvfile $processed/samplesheet.csv # make a copy of the sample sheet
+
+# redirect all output to log file and terminal
+exec > >(tee "$processed/.ont-process-run.log") 2>&1
 
 # get col indexes
 samplename_idx=$(head -1 ${csvfile} | sed 's/,/\n/g' | nl | grep -E 'S|sample' | cut -f 1)
@@ -153,22 +153,20 @@ parallel -k faster -ts ::: $processed/fastq/*.fastq.gz >> $processed/fastq-stats
 echo "No fastq files found"
 
 
-if [[ $makereport == 'true' ]] && [[ $(command -v faster-report.R) ]] && [[ $usedocker != 'true' ]]; then
-    [ "$(ls -A $processed/fastq/*.fastq.gz)" ] &&
-    echo -e 'Running faster-report.R ...\n================================================================' && 
-    faster-report.R -p $(realpath $processed/fastq) &&
-    mv faster-report.html $processed/faster-report.html ||
-    echo "faster-report failed!"
-fi
-
-if [[ $makereport == 'true' ]] && [[ $usedocker == 'true' ]]; then
-    [ "$(ls -A $processed/fastq/*.fastq.gz)" ] &&
-    echo -e 'Running docker aangeloo/faster-report ...\n================================================================'
-    docker run \
-        --mount type=bind,src="$HOME",target="$HOME" \
-        -w $(realpath $processed) \
-        aangeloo/faster-report \
-        -p $(realpath $processed/fastq) 
+if [[ $makereport == 'true' ]]; then
+    if [ "$(ls -A $processed/fastq/*.fastq.gz)" ]; then
+        echo -e 'Running nextflow run angelovangel/faster-report ...\n================================================================'
+        nf_temp=$(mktemp -d)
+        fastq_abs=$(realpath "$processed/fastq")
+        processed_abs=$(realpath "$processed")
+        if ( cd "$nf_temp" && nextflow run angelovangel/faster-report --reads "$fastq_abs" ); then
+            cp "$nf_temp/output/faster-report.html" "$processed_abs/"
+            rm -rf "$nf_temp"
+        else
+            echo "nextflow faster-report failed!"
+            rm -rf "$nf_temp"
+        fi
+    fi
 fi
 
 echo -e "================================================================\nDone!"
