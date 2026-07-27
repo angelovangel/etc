@@ -82,6 +82,11 @@ else
     csvfile=$infile
 fi
 
+# make sure csvfile has a trailing newline
+if [ -n "$(tail -c 1 "$csvfile")" ]; then
+    echo "" >> "$csvfile"
+fi
+
 # place processed in parent folder of $fastqpath
 processed=$(dirname $fastqpath)/processed
 
