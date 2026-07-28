@@ -14,4 +14,4 @@ samplesheet*
 processed*
 *.log
 .temp*
-.nextflow .nextflow.log
+.nextflow*

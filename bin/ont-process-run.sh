@@ -29,18 +29,21 @@ Options:
     -c  (required) a path to a csv or Excel file with columns 'sample' and 'barcode', in any order
     -p  (required) path to ONT fastq_pass folder
     -r  (optional flag) generate faster-report html file
+    -s  (optional) subsample fastq files for html report gc, len, qscore and kmer calculations (default: 0.1, can be 0.1 to 1.0)
     -n  (optional) non-barcoded run - use barcode00 in samplesheet"
 
 makereport=false
 nonbc=false
+subs=0.1
 
-while getopts :hrnc:p: flag
+while getopts :hrnc:p:s: flag
 do
    case "${flag}" in
       h) echo "$usage"; exit;;
       c) infile=${OPTARG};;
       p) fastqpath=${OPTARG};;
       r) makereport=true;;
+      s) subs=${OPTARG};;
       n) nonbc=true;;
       :) printf "missing argument for -%s\n" "$OPTARG" >&2; echo "$usage" >&2; exit 1;;
      \?) printf "illegal option: -%s\n" "$OPTARG" >&2; echo "$usage" >&2; exit 1;;
@@ -164,7 +167,7 @@ if [[ $makereport == 'true' ]]; then
         nf_temp=$(mktemp -d)
         fastq_abs=$(realpath "$processed/fastq")
         processed_abs=$(realpath "$processed")
-        if ( cd "$nf_temp" && nextflow run angelovangel/faster-report --reads "$fastq_abs" ); then
+        if ( cd "$nf_temp" && nextflow run angelovangel/faster-report --reads "$fastq_abs" --subsample $subs); then
             cp "$nf_temp/output/faster-report.html" "$processed_abs/"
             rm -rf "$nf_temp"
         else
