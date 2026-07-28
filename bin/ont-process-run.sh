@@ -163,10 +163,11 @@ echo "No fastq files found"
 
 if [[ $makereport == 'true' ]]; then
     if [ "$(ls -A $processed/fastq/*.fastq.gz)" ]; then
-        echo -e 'Running nextflow run angelovangel/faster-report ...\n================================================================'
+        echo -e 'Running nextflow ...\n================================================================'
         nf_temp=$(mktemp -d)
         fastq_abs=$(realpath "$processed/fastq")
         processed_abs=$(realpath "$processed")
+        echo -e "nextflow run angelovangel/faster-report --reads $fastq_abs --subsample $subs\n-----------------"
         if ( cd "$nf_temp" && nextflow run angelovangel/faster-report --reads "$fastq_abs" --subsample $subs); then
             cp "$nf_temp/output/faster-report.html" "$processed_abs/"
             rm -rf "$nf_temp"
