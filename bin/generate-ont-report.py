@@ -141,7 +141,16 @@ def parse_throughput(path):
 # METRICS COMPUTATION
 # ---------------------------------------------------------------------------
 
-def compute_sample_metrics(label, pa_data, tp_data, color):
+def extract_flow_cell_id(pa_path):
+    """Extract the flow cell ID from a pore_activity filename.
+
+    e.g. pore_activity_PBC87221_run1.csv  ->  PBC87221
+    """
+    stem = Path(pa_path).stem.replace("pore_activity_", "")
+    return stem.split("_")[0]
+
+
+def compute_sample_metrics(label, pa_data, tp_data, color, flow_cell_id=""):
     time_map = pa_data["time_to_state_time"]
     minutes_sorted = sorted(time_map.keys())
 
@@ -192,6 +201,7 @@ def compute_sample_metrics(label, pa_data, tp_data, color):
 
     return {
         "label": label,
+        "flow_cell_id": flow_cell_id,
         "color": color,
         "yield_gb": yield_gb,
         "total_reads": total_reads,
@@ -309,6 +319,7 @@ HTML_TEMPLATE = """\
   <thead>
     <tr>
       <th>Sample</th>
+      <th>Flow Cell ID</th>
       <th style="text-align:right">Yield (Gb)</th>
       <th style="text-align:right">Total Reads</th>
       <th style="text-align:right">Passed Reads</th>
@@ -671,6 +682,7 @@ def _render_summary_row(s):
     return (
         f"    <tr>"
         f"<td><strong>{s['label']}</strong></td>"
+        f"<td>{s.get('flow_cell_id', '')}</td>"
         f"<td style='text-align:right'>{s['yield_gb']:.2f}</td>"
         f"<td style='text-align:right'>{s['total_reads']:,}</td>"
         f"<td style='text-align:right'>{s['passed_reads']:,}</td>"
@@ -697,9 +709,12 @@ def match_pairs(pa_files, tp_files):
 
     pa_by_id = {run_id(f): f for f in pa_files}
     tp_by_id = {run_id(f): f for f in tp_files}
-    shared = sorted(set(pa_by_id) & set(tp_by_id))
+    shared = {run_id(f) for f in pa_files} & set(tp_by_id)
     if shared:
-        return [(pa_by_id[rid], tp_by_id[rid]) for rid in shared]
+        # Preserve the original pa_files order so --labels align correctly.
+        return [(pa_by_id[rid], tp_by_id[rid])
+                for rid in (run_id(f) for f in pa_files)
+                if rid in shared]
     return list(zip(pa_files, tp_files))
 
 
@@ -725,6 +740,7 @@ def generate_report(pa_files, tp_files, labels, title, out_path, sample_hz):
     for i, (pa_path, tp_path) in enumerate(pairs):
         label = labels[i] if i < len(labels) else derive_label(pa_path)
         color = SAMPLE_COLORS[i % len(SAMPLE_COLORS)]
+        flow_cell_id = extract_flow_cell_id(pa_path)
         print(f"  [{i+1}] {label}")
         print(f"       pore_activity : {pa_path}")
         print(f"       throughput    : {tp_path}")
@@ -733,7 +749,7 @@ def generate_report(pa_files, tp_files, labels, title, out_path, sample_hz):
         tp_data = parse_throughput(tp_path)
         tp_data_list.append(tp_data)
 
-        metrics = compute_sample_metrics(label, pa_data, tp_data, color)
+        metrics = compute_sample_metrics(label, pa_data, tp_data, color, flow_cell_id)
         samples_metrics.append(metrics)
 
     # Build JSON payloads
