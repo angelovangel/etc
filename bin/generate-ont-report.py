@@ -358,7 +358,9 @@ HTML_TEMPLATE = """\
 </div>
 
 <div class="footer">
-  Generated on {generated_on} &mdash; {title}
+  Generated on {generated_on} &mdash; {title} &mdash;
+  <a href="https://github.com/angelovangel/etc" target="_blank" rel="noopener"
+     style="color:#64748b;text-decoration:none;">github.com/angelovangel/etc</a>
 </div>
 </body>
 </html>
@@ -494,6 +496,188 @@ LINE_CHART_IFRAME = """\
       row.append("circle").attr("r",5).style("fill",s.color);
       row.append("text").attr("class","legend-text").attr("x",10).attr("y",4).text(s.name);
     }});
+  </script>
+</body>
+</html>"""
+
+
+ACTIVE_PORES_IFRAME = """\
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>{chart_title}</title>
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+  <style>
+    body{{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+         background:#fff;margin:0;padding:20px;color:#333;}}
+    #chart-container{{max-width:960px;margin:0 auto;position:relative;}}
+    .line{{fill:none;stroke-width:2.5px;opacity:0.85;}}
+    .tooltip{{position:absolute;padding:10px;font-size:13px;
+              background:rgba(255,255,255,.95);border:1px solid #ddd;border-radius:4px;
+              pointer-events:none;opacity:0;box-shadow:0 4px 6px rgba(0,0,0,.1);
+              white-space:nowrap;transition:opacity .2s;z-index:10;}}
+    .grid line{{stroke:#ddd;stroke-dasharray:4,4;}}
+    .grid path{{stroke-width:0;}}
+    .axis text{{font-size:12px;fill:#555;}}
+    .axis path,.axis line{{stroke:#bbb;}}
+    .hover-line{{stroke:#888;stroke-dasharray:4,4;stroke-width:1px;pointer-events:none;opacity:0;}}
+    h2{{text-align:center;color:#222;margin-bottom:6px;}}
+    .legend-item{{cursor:pointer;}}
+    .legend-text{{font-size:12px;fill:#333;user-select:none;}}
+    .toggle-bar{{display:flex;justify-content:center;gap:0;margin-bottom:10px;}}
+    .toggle-btn{{
+      padding:5px 18px;font-size:12px;cursor:pointer;border:1px solid #bbb;
+      background:#f4f4f4;color:#444;transition:all .2s;user-select:none;
+    }}
+    .toggle-btn:first-child{{border-radius:6px 0 0 6px;}}
+    .toggle-btn:last-child{{border-radius:0 6px 6px 0;}}
+    .toggle-btn.active{{background:#2563eb;color:#fff;border-color:#2563eb;font-weight:600;}}
+  </style>
+</head>
+<body>
+  <div id="chart-container">
+    <h2>{chart_title}</h2>
+    <div class="toggle-bar">
+      <button class="toggle-btn active" id="btn-abs" onclick="setMode('abs')">Absolute</button>
+      <button class="toggle-btn" id="btn-rel" onclick="setMode('rel')">Relative (%)</button>
+    </div>
+    <div id="chart"></div>
+    <div class="tooltip" id="tooltip"></div>
+  </div>
+  <script>
+    const plotData = {plot_data_json};
+
+    // Pre-compute baseline (max y value) for each sample — 100% = peak pore count
+    plotData.samples.forEach(s => {{
+      s.baseline = d3.max(s.data, d => d.y) || 1;
+      s.relData = s.data.map(d => ({{x: d.x, y: +(d.y / s.baseline * 100).toFixed(2)}}));
+    }});
+
+    let mode = 'abs'; // 'abs' | 'rel'
+
+    const margin = {{top:20,right:180,bottom:50,left:65}};
+    const W = 960 - margin.left - margin.right;
+    const H = {chart_height} - margin.top - margin.bottom;
+
+    const svg = d3.select("#chart").append("svg")
+        .attr("width",  W + margin.left + margin.right)
+        .attr("height", H + margin.top  + margin.bottom)
+      .append("g")
+        .attr("transform", `translate(${{margin.left}},${{margin.top}})`);
+
+    const tooltip = d3.select("#tooltip");
+    const allPoints = plotData.samples.flatMap(s => s.data);
+    const xDomain = d3.extent(allPoints, d => d.x);
+    const x = d3.scaleLinear().domain(xDomain).range([0, W]);
+    const y = d3.scaleLinear().range([H, 0]);
+
+    const gridG  = svg.append("g").attr("class","grid");
+    const xAxisG = svg.append("g").attr("class","axis").attr("transform",`translate(0,${{H}})`);
+    const yAxisG = svg.append("g").attr("class","axis");
+
+    xAxisG.call(d3.axisBottom(x).ticks(10).tickFormat(d => d + " min"));
+
+    svg.append("text")
+       .attr("x", W/2).attr("y", H+42)
+       .attr("text-anchor","middle").attr("font-size","12px").attr("fill","#555")
+       .text("Experiment Time (minutes)");
+
+    const yLabel = svg.append("text")
+       .attr("transform","rotate(-90)")
+       .attr("x", -H/2).attr("y", -55)
+       .attr("text-anchor","middle").attr("font-size","12px").attr("fill","#555");
+
+    const lineGen = d3.line().x(d=>x(d.x)).y(d=>y(d.y)).curve(d3.curveMonotoneX);
+
+    plotData.samples.forEach(sample => {{
+      const g = svg.append("g")
+          .attr("class", `sample-group sample-${{sample.name.replace(/\W/g,"_")}}`);
+      g.append("path").attr("class","line").attr("stroke", sample.color);
+    }});
+
+    const hoverLine = svg.append("line")
+        .attr("class","hover-line").attr("y1",0).attr("y2",H);
+
+    svg.append("rect")
+        .attr("width",W).attr("height",H).attr("fill","none").attr("pointer-events","all")
+        .on("mousemove", function(event) {{
+          const [mx] = d3.pointer(event);
+          const xVal = x.invert(mx);
+          hoverLine.attr("x1",mx).attr("x2",mx).style("opacity",1);
+          const isRel = mode === 'rel';
+          let html = `<strong>t = ${{Math.round(xVal)}} min</strong><br/>`;
+          plotData.samples.forEach(s => {{
+            const pts = isRel ? s.relData : s.data;
+            const bisect = d3.bisector(d=>d.x).left;
+            const idx = bisect(pts, xVal);
+            const d = pts[idx] || pts[pts.length-1];
+            if (d) {{
+              const val = isRel ? d.y.toFixed(1) + '%' : d.y.toLocaleString();
+              html += `<span style="color:${{s.color}}">&#9632;</span> ${{s.name}}: <b>${{val}}</b><br/>`;
+            }}
+          }});
+          tooltip.transition().duration(40).style("opacity",1);
+          tooltip.html(html)
+                 .style("left",(event.pageX+15)+"px")
+                 .style("top",Math.min(event.pageY-28, window.innerHeight-160)+"px");
+        }})
+        .on("mouseout", () => {{
+          hoverLine.style("opacity",0);
+          tooltip.transition().duration(200).style("opacity",0);
+        }});
+
+    const legend = svg.append("g").attr("transform",`translate(${{W+14}},0)`);
+    plotData.samples.forEach((s,i) => {{
+      const row = legend.append("g").attr("class","legend-item")
+          .attr("transform",`translate(0,${{i*24}})`)
+          .on("mouseover", () => {{
+            svg.selectAll(".sample-group").style("opacity",0.1);
+            svg.select(`.sample-${{s.name.replace(/\W/g,"_")}}`).style("opacity",1).raise();
+          }})
+          .on("mouseout", () => svg.selectAll(".sample-group").style("opacity",1))
+          .on("click", function() {{
+            s.hidden = !s.hidden;
+            svg.select(`.sample-${{s.name.replace(/\W/g,"_")}}`)
+               .style("display", s.hidden ? "none" : null);
+            d3.select(this).select("circle").style("fill", s.hidden ? "#ccc" : s.color);
+            d3.select(this).select("text")
+              .style("text-decoration", s.hidden ? "line-through" : "none")
+              .style("fill", s.hidden ? "#999" : "#333");
+          }});
+      row.append("circle").attr("r",5).style("fill",s.color);
+      row.append("text").attr("class","legend-text").attr("x",10).attr("y",4).text(s.name);
+    }});
+
+    function setMode(m) {{
+      mode = m;
+      document.getElementById('btn-abs').classList.toggle('active', m==='abs');
+      document.getElementById('btn-rel').classList.toggle('active', m==='rel');
+      render();
+    }}
+
+    function render() {{
+      const isRel = mode === 'rel';
+      const pts = plotData.samples.flatMap(s => isRel ? s.relData : s.data);
+      const yMax = d3.max(pts, d => d.y);
+      y.domain([0, yMax * 1.05]);
+
+      const fmt = isRel ? d => d + '%' : d => d.toLocaleString();
+      yAxisG.transition().duration(400).call(d3.axisLeft(y).tickFormat(fmt));
+      gridG.transition().duration(400)
+           .call(d3.axisLeft(y).tickSize(-W).tickFormat(""));
+      yLabel.text(isRel ? 'Active Pores (% of start)' : 'Active Pores');
+
+      plotData.samples.forEach(sample => {{
+        const data = isRel ? sample.relData : sample.data;
+        svg.select(`.sample-${{sample.name.replace(/\W/g,"_")}} path`)
+           .datum(data)
+           .transition().duration(400)
+           .attr("d", lineGen);
+      }});
+    }}
+
+    render();
   </script>
 </body>
 </html>"""
@@ -672,6 +856,17 @@ def _render_line_chart_iframe(plot_data, chart_height, y_label):
     return _html_escape_attr(html)
 
 
+def _render_active_pores_iframe(plot_data, chart_height):
+    title = plot_data.get("title", "")
+    json_str = json.dumps(plot_data, separators=(",", ":"))
+    html = ACTIVE_PORES_IFRAME.format(
+        chart_title=title,
+        plot_data_json=json_str,
+        chart_height=chart_height,
+    )
+    return _html_escape_attr(html)
+
+
 def _render_stacked_bar_iframe(plot_data):
     json_str = json.dumps(plot_data, separators=(",", ":"))
     html = STACKED_BAR_IFRAME.format(plot_data_json=json_str)
@@ -758,7 +953,7 @@ def generate_report(pa_files, tp_files, labels, title, out_path, sample_hz):
     pore_act_data     = build_avg_pore_activity_data(samples_metrics)
 
     # Render iframes (escaped for HTML attributes)
-    active_pores_iframe  = _render_line_chart_iframe(active_pores_data, 600, "Active Pores")
+    active_pores_iframe  = _render_active_pores_iframe(active_pores_data, 600)
     yield_iframe         = _render_line_chart_iframe(yield_data, 400, "Yield (Gb)")
     pore_activity_iframe = _render_stacked_bar_iframe(pore_act_data)
 
