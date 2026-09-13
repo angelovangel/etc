@@ -391,16 +391,59 @@ LINE_CHART_IFRAME = """\
     h2{{text-align:center;color:#222;margin-bottom:6px;}}
     .legend-item{{cursor:pointer;}}
     .legend-text{{font-size:12px;fill:#333;user-select:none;}}
+    .toggle-bar{{display:flex;justify-content:center;gap:0;margin-bottom:10px;}}
+    .toggle-btn{{
+      padding:5px 18px;font-size:12px;cursor:pointer;border:1px solid #bbb;
+      background:#f4f4f4;color:#444;transition:all .2s;user-select:none;
+    }}
+    .toggle-btn:first-child{{border-radius:6px 0 0 6px;}}
+    .toggle-btn:last-child{{border-radius:0 6px 6px 0;}}
+    .toggle-btn.active{{background:#2563eb;color:#fff;border-color:#2563eb;font-weight:600;}}
   </style>
 </head>
 <body>
   <div id="chart-container">
-    <h2>{chart_title}</h2>
+    <h2 id="chart-title">{chart_title}</h2>
+    <div class="toggle-bar">
+      <button class="toggle-btn active" id="btn-yield" onclick="setMode('yield')">Yield Over Time</button>
+      <button class="toggle-btn" id="btn-rate" onclick="setMode('rate')">Rate (Gb/min)</button>
+    </div>
     <div id="chart"></div>
     <div class="tooltip" id="tooltip"></div>
   </div>
   <script>
     const plotData = {plot_data_json};
+
+    // First derivative of cumulative yield: windowed rate in Gb/min.
+    // Linearly interpolates the cumulative curve at regular BIN_MIN intervals,
+    // then computes slope = ΔY / BIN_MIN — giving a smooth, readable signal
+    // instead of noisy point-by-point differences on dense throughput data.
+    const BIN_MIN = 100;
+    function interpY(data, t) {{
+      if (t <= data[0].x) return data[0].y;
+      if (t >= data[data.length-1].x) return data[data.length-1].y;
+      let lo = 0, hi = data.length - 1;
+      while (hi - lo > 1) {{
+        const mid = (lo + hi) >> 1;
+        if (data[mid].x <= t) lo = mid; else hi = mid;
+      }}
+      const frac = (t - data[lo].x) / (data[hi].x - data[lo].x);
+      return data[lo].y + frac * (data[hi].y - data[lo].y);
+    }}
+    plotData.samples.forEach(s => {{
+      if (s.data.length < 2) {{ s.rateData = []; return; }}
+      const xMax = s.data[s.data.length - 1].x;
+      const pts = [];
+      for (let t = BIN_MIN; t <= xMax + BIN_MIN / 2; t += BIN_MIN) {{
+        const t1 = Math.min(t, xMax);
+        const t0 = t1 - BIN_MIN;
+        const rate = (interpY(s.data, t1) - interpY(s.data, t0)) / BIN_MIN;
+        pts.push({{x: t1, y: Math.max(0, rate)}});
+      }}
+      s.rateData = pts;
+    }});
+
+    let mode = 'yield'; // 'yield' | 'rate'
 
     const margin = {{top:20,right:180,bottom:50,left:65}};
     const W = 960 - margin.left - margin.right;
@@ -413,47 +456,105 @@ LINE_CHART_IFRAME = """\
         .attr("transform", `translate(${{margin.left}},${{margin.top}})`);
 
     const tooltip = d3.select("#tooltip");
+
     const allPoints = plotData.samples.flatMap(s => s.data);
     const xDomain = d3.extent(allPoints, d => d.x);
-    const yMax    = d3.max(allPoints, d => d.y);
     const x = d3.scaleLinear().domain(xDomain).range([0, W]);
-    const y = d3.scaleLinear().domain([0, yMax * 1.05]).range([H, 0]);
 
-    svg.append("g").attr("class","grid")
-       .call(d3.axisLeft(y).tickSize(-W).tickFormat(""));
-
-    svg.append("g").attr("class","axis")
-       .attr("transform", `translate(0,${{H}})`)
-       .call(d3.axisBottom(x).ticks(10).tickFormat(d => d + " min"));
-
-    svg.append("g").attr("class","axis")
-       .call(d3.axisLeft(y));
+    // Axes groups — reused and updated on each redraw
+    const gGrid  = svg.append("g").attr("class","grid");
+    const gXAxis = svg.append("g").attr("class","axis")
+        .attr("transform", `translate(0,${{H}})`);
+    const gYAxis = svg.append("g").attr("class","axis");
 
     svg.append("text")
        .attr("x", W/2).attr("y", H+42)
        .attr("text-anchor","middle").attr("font-size","12px").attr("fill","#555")
        .text("Experiment Time (minutes)");
 
-    svg.append("text")
+    const yLabel = svg.append("text")
        .attr("transform","rotate(-90)")
        .attr("x", -H/2).attr("y", -55)
-       .attr("text-anchor","middle").attr("font-size","12px").attr("fill","#555")
-       .text("{y_label}");
+       .attr("text-anchor","middle").attr("font-size","12px").attr("fill","#555");
 
-    const lineGen = d3.line().x(d=>x(d.x)).y(d=>y(d.y)).curve(d3.curveMonotoneX);
+    const lineGen = d3.line().x(d=>x(d.x)).curve(d3.curveMonotoneX);
 
+    // Create one path + dots group per sample (updated on redraw)
     plotData.samples.forEach(sample => {{
       const g = svg.append("g")
-          .attr("class", `sample-group sample-${{sample.name.replace(/\\W/g,"_")}}`);
-      g.append("path").datum(sample.data)
-          .attr("class","line").attr("stroke", sample.color).attr("d", lineGen);
+          .attr("class", `sample-group sample-${{sample.name.replace(/\W/g,"_")}}`);
+      g.append("path").attr("class","line").attr("stroke", sample.color);
+      g.append("g").attr("class","dots");
     }});
 
     const hoverLine = svg.append("line")
         .attr("class","hover-line").attr("y1",0).attr("y2",H);
 
-    svg.append("rect")
-        .attr("width",W).attr("height",H).attr("fill","none").attr("pointer-events","all")
+    const overlay = svg.append("rect")
+        .attr("width",W).attr("height",H).attr("fill","none").attr("pointer-events","all");
+
+    // Legend (static — click to show/hide, hover to highlight)
+    const legend = svg.append("g").attr("transform",`translate(${{W+14}},0)`);
+    plotData.samples.forEach((s,i) => {{
+      const row = legend.append("g").attr("class","legend-item")
+          .attr("transform",`translate(0,${{i*24}})`)
+          .on("mouseover", () => {{
+            svg.selectAll(".sample-group").style("opacity",0.1);
+            svg.select(`.sample-${{s.name.replace(/\W/g,"_")}}`).style("opacity",1).raise();
+          }})
+          .on("mouseout", () => svg.selectAll(".sample-group").style("opacity",1))
+          .on("click", function() {{
+            s.hidden = !s.hidden;
+            svg.select(`.sample-${{s.name.replace(/\W/g,"_")}}`)
+               .style("display", s.hidden ? "none" : null);
+            d3.select(this).select("circle").style("fill", s.hidden ? "#ccc" : s.color);
+            d3.select(this).select("text")
+              .style("text-decoration", s.hidden ? "line-through" : "none")
+              .style("fill", s.hidden ? "#999" : "#333");
+          }});
+      row.append("circle").attr("r",5).style("fill",s.color);
+      row.append("text").attr("class","legend-text").attr("x",10).attr("y",4).text(s.name);
+    }});
+
+    let y = d3.scaleLinear().range([H, 0]);
+
+    function draw() {{
+      const isRate = mode === 'rate';
+      const activeKey = isRate ? 'rateData' : 'data';
+      const label = isRate ? 'Rate (Gb/min)' : '{y_label}';
+      document.getElementById("chart-title").textContent =
+        isRate ? 'Yield Rate Over Time (Gb/min)' : '{chart_title}';
+
+      const activePoints = plotData.samples.flatMap(s => s[activeKey]);
+      const yMax = d3.max(activePoints, d => d.y);
+      const yMin = isRate ? d3.min(activePoints, d => d.y) : 0;
+      y.domain([Math.min(0, yMin), yMax * 1.05]);
+
+      gGrid.call(d3.axisLeft(y).tickSize(-W).tickFormat(""));
+      gXAxis.call(d3.axisBottom(x).ticks(10).tickFormat(d => d + " min"));
+      gYAxis.call(d3.axisLeft(y));
+      yLabel.text(label);
+
+      lineGen.y(d => y(d.y));
+
+      plotData.samples.forEach(sample => {{
+        const cls = `.sample-${{sample.name.replace(/\W/g,"_")}}`;
+        svg.select(cls + " path")
+           .datum(sample[activeKey])
+           .attr("d", lineGen);
+        // Dot markers — shown only in rate mode
+        svg.select(cls + " .dots").selectAll("circle")
+           .data(isRate ? sample[activeKey] : [])
+           .join("circle")
+           .attr("r", 3.5)
+           .attr("cx", d => x(d.x))
+           .attr("cy", d => y(d.y))
+           .attr("fill", sample.color)
+           .attr("stroke", "#fff")
+           .attr("stroke-width", 1.5);
+      }});
+
+      overlay
         .on("mousemove", function(event) {{
           const [mx] = d3.pointer(event);
           const xVal = x.invert(mx);
@@ -461,9 +562,10 @@ LINE_CHART_IFRAME = """\
           let html = `<strong>t = ${{Math.round(xVal)}} min</strong><br/>`;
           plotData.samples.forEach(s => {{
             const bisect = d3.bisector(d=>d.x).left;
-            const idx = bisect(s.data, xVal);
-            const d = s.data[idx] || s.data[s.data.length-1];
-            if (d) html += `<span style="color:${{s.color}}">&#9632;</span> ${{s.name}}: <b>${{d.y.toLocaleString()}}</b><br/>`;
+            const data = s[activeKey];
+            const idx = bisect(data, xVal);
+            const pt = data[idx] || data[data.length-1];
+            if (pt) html += `<span style="color:${{s.color}}">&#9632;</span> ${{s.name}}: <b>${{pt.y.toLocaleString()}}</b><br/>`;
           }});
           tooltip.transition().duration(40).style("opacity",1);
           tooltip.html(html)
@@ -474,28 +576,16 @@ LINE_CHART_IFRAME = """\
           hoverLine.style("opacity",0);
           tooltip.transition().duration(200).style("opacity",0);
         }});
+    }}
 
-    const legend = svg.append("g").attr("transform",`translate(${{W+14}},0)`);
-    plotData.samples.forEach((s,i) => {{
-      const row = legend.append("g").attr("class","legend-item")
-          .attr("transform",`translate(0,${{i*24}})`)
-          .on("mouseover", () => {{
-            svg.selectAll(".sample-group").style("opacity",0.1);
-            svg.select(`.sample-${{s.name.replace(/\\W/g,"_")}}`).style("opacity",1).raise();
-          }})
-          .on("mouseout", () => svg.selectAll(".sample-group").style("opacity",1))
-          .on("click", function() {{
-            s.hidden = !s.hidden;
-            svg.select(`.sample-${{s.name.replace(/\\W/g,"_")}}`)
-               .style("display", s.hidden ? "none" : null);
-            d3.select(this).select("circle").style("fill", s.hidden ? "#ccc" : s.color);
-            d3.select(this).select("text")
-              .style("text-decoration", s.hidden ? "line-through" : "none")
-              .style("fill", s.hidden ? "#999" : "#333");
-          }});
-      row.append("circle").attr("r",5).style("fill",s.color);
-      row.append("text").attr("class","legend-text").attr("x",10).attr("y",4).text(s.name);
-    }});
+    function setMode(m) {{
+      mode = m;
+      document.getElementById("btn-yield").classList.toggle("active", m === 'yield');
+      document.getElementById("btn-rate").classList.toggle("active",  m === 'rate');
+      draw();
+    }}
+
+    draw();
   </script>
 </body>
 </html>"""
