@@ -141,7 +141,8 @@ while IFS="," read line; do
     [ -d $currentdir ] && 
     [ "$(ls -A $currentdir)" ] && 
     echo "merging ${samplename} ----- ${barcode}" && 
-    cat $currentdir/*.fastq.gz > $processed/fastq/${prefix}_${samplename}.fastq.gz ||
+    #cat $currentdir/*.fastq.gz > $processed/fastq/${prefix}_${samplename}.fastq.gz ||
+    cat $currentdir/*.fastq.gz > $processed/fastq/${samplename}.fastq.gz ||
     echo folder $currentdir not found or empty!
 done < $csvfile
 
