@@ -3,9 +3,10 @@
 # cat, compress, rename fastq files from a fastq_pass based on csv or excel sample-barcode sheet
 # runs faster to generate summary data
 # optionally runs faster-report to generate html report
-# option -b processes bam files instead (e.g. from a bam_pass folder) - files are merged per
-# sample with 'samtools merge' (no fastq conversion). faster-report accepts bam files directly;
-# faster itself needs fastq, so bam is streamed to it on the fly via 'samtools fastq'
+# fastq vs bam mode is auto-detected by inspecting the fastq_pass/bam_pass folder (no -b flag
+# needed) - files are merged per sample with 'samtools merge' (no fastq conversion) in bam mode.
+# faster-report accepts bam files directly; faster itself needs fastq, so bam is streamed to it
+# on the fly via 'samtools fastq'
 
 # c - a path to a csv or Excel file
 # Columns are sample and barcode, in any order
@@ -22,28 +23,25 @@
 
 # setup
 # set -e
-usage="$(basename "$0") [-c samplesheet] [-p fastqpath] [-h] [-r] [-b]
+usage="$(basename "$0") [-c samplesheet] [-p fastqpath] [-h] [-r]
 
 Process ONT sequencing run - cat, compress, rename fastq files from a fastq_pass folder
 based on the samplesheet. Run faster or faster-report on the files. 
 Results are saved in 'processed' folder in the current directory.
+fastq vs bam mode is detected automatically from the files found in fastqpath.
 Options:
     -h  show this help text
     -c  (required) a path to a csv or Excel file with columns 'sample' and 'barcode', in any order
-    -p  (required) path to ONT fastq_pass folder (or bam_pass folder if -b is used)
+    -p  (required) path to ONT fastq_pass folder (or bam_pass folder - auto-detected)
     -r  (optional flag) generate faster-report html file
     -s  (optional) subsample fastq/bam files for html report gc, len, qscore and kmer calculations (default: 0.1, can be 0.1 to 1.0)
-    -n  (optional) non-barcoded run - use barcode00 in samplesheet
-    -b  (optional flag) bam mode - process a bam_pass folder instead of fastq_pass; bam files are
-        merged per sample with 'samtools merge' (no fastq conversion). faster-report runs directly
-        on the merged bam files; faster stats are computed via 'samtools fastq' piped into faster"
+    -n  (optional) non-barcoded run - use barcode00 in samplesheet"
 
 makereport=false
 nonbc=false
-bammode=false
 subs=0.1
 
-while getopts :hrnbc:p:s: flag
+while getopts :hrnc:p:s: flag
 do
    case "${flag}" in
       h) echo "$usage"; exit;;
@@ -52,22 +50,10 @@ do
       r) makereport=true;;
       s) subs=${OPTARG};;
       n) nonbc=true;;
-      b) bammode=true;;
       :) printf "missing argument for -%s\n" "$OPTARG" >&2; echo "$usage" >&2; exit 1;;
      \?) printf "illegal option: -%s\n" "$OPTARG" >&2; echo "$usage" >&2; exit 1;;
    esac
 done
-
-# set glob/extension/output-dir depending on mode
-if [[ $bammode == 'true' ]]; then
-    ext='bam'
-    globpat='*.bam'
-    outdir='bam'
-else
-    ext='fastq.gz'
-    globpat='*.fastq.gz'
-    outdir='fastq'
-fi
 
 # instread of having to supply samplesheet in nonbc runs, just make it here
 # use -c to give samples name
@@ -88,6 +74,52 @@ fi
 if [[ ! -f ${infile} ]] || [[ ! -d ${fastqpath} ]]; then
     echo "File ${infile} or directory ${fastqpath} does not exist" >&2
     exit 2
+fi
+
+# auto-detect fastq vs bam mode by looking at fastqpath - either files directly inside it
+# (non-barcoded run) or inside its first barcode* subfolder
+detect_filetype() {
+    local path=$1
+    if compgen -G "$path/*.bam" > /dev/null; then
+        echo bam; return
+    fi
+    if compgen -G "$path/*.fastq.gz" > /dev/null; then
+        echo fastq; return
+    fi
+    local firstdir
+    firstdir=$(find "$path" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | sort | head -1)
+    if [ -n "$firstdir" ]; then
+        if compgen -G "$firstdir/*.bam" > /dev/null; then
+            echo bam; return
+        fi
+        if compgen -G "$firstdir/*.fastq.gz" > /dev/null; then
+            echo fastq; return
+        fi
+    fi
+    echo none
+}
+
+filetype=$(detect_filetype "$fastqpath")
+case "$filetype" in
+    bam)  bammode=true ;;
+    fastq) bammode=false ;;
+    *)
+        echo "Could not find any .fastq.gz or .bam files in $fastqpath (or its first subfolder)" >&2
+        exit 2
+        ;;
+esac
+
+# set glob/extension/output-dir depending on detected mode
+if [[ $bammode == 'true' ]]; then
+    ext='bam'
+    globpat='*.bam'
+    outdir='bam'
+    echo -e "Detected bam files, running in bam mode...\n================================================================"
+else
+    ext='fastq.gz'
+    globpat='*.fastq.gz'
+    outdir='fastq'
+    echo -e "Detected fastq.gz files, running in fastq mode...\n================================================================"
 fi
 
 # convert to csv if excel is provided
@@ -153,25 +185,32 @@ while IFS="," read line; do
         echo "skipping $line"
         continue
     fi
-    if [[ $bammode == 'false' ]]; then
+    if [[ $bammode == 'false' ]] && compgen -G "$currentdir/*" > /dev/null; then
         pigz -q $currentdir/*.* #in case these are fastq files
     fi
     ((counter++)) # counter to add to sample name
     prefix=$(printf "%02d" $counter) # prepend zero
-    # check if dir exists and has files, then merge (cat for fastq, samtools merge for bam)
+    # check if dir exists and has matching files, then merge (cat for fastq, samtools merge for bam);
+    # skip cleanly (no output file at all) when there are no matching files, instead of writing an
+    # empty file
     if [[ $bammode == 'true' ]]; then
-        [ -d $currentdir ] &&
-        [ "$(ls -A $currentdir)" ] &&
-        echo "merging ${samplename} ----- ${barcode}" &&
-        samtools merge -f $processed/$outdir/${samplename}.bam $currentdir/*.bam ||
-        echo folder $currentdir not found or empty!
+        outfile=$processed/$outdir/${samplename}.bam
+        if [ -d $currentdir ] && compgen -G "$currentdir/*.bam" > /dev/null; then
+            echo "merging ${samplename} ----- ${barcode}"
+            samtools merge -f "$outfile" $currentdir/*.bam
+            [ -s "$outfile" ] || { echo "merge produced no data, removing empty $outfile"; rm -f "$outfile"; }
+        else
+            echo "folder $currentdir not found or has no bam files, skipping!"
+        fi
     else
-        [ -d $currentdir ] && 
-        [ "$(ls -A $currentdir)" ] && 
-        echo "merging ${samplename} ----- ${barcode}" && 
-        #cat $currentdir/*.fastq.gz > $processed/fastq/${prefix}_${samplename}.fastq.gz ||
-        cat $currentdir/*.fastq.gz > $processed/fastq/${samplename}.fastq.gz ||
-        echo folder $currentdir not found or empty!
+        outfile=$processed/fastq/${samplename}.fastq.gz
+        if [ -d $currentdir ] && compgen -G "$currentdir/*.fastq.gz" > /dev/null; then
+            echo "merging ${samplename} ----- ${barcode}"
+            cat $currentdir/*.fastq.gz > "$outfile"
+            [ -s "$outfile" ] || { echo "merge produced no data, removing empty $outfile"; rm -f "$outfile"; }
+        else
+            echo "folder $currentdir not found or has no fastq.gz files, skipping!"
+        fi
     fi
 done < $csvfile
 
