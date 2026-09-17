@@ -1,8 +1,11 @@
 #! /usr/bin/env bash
-# dependencies: pigz, parallel, faster, faster-report.R
+# dependencies: pigz, parallel, faster, faster-report.R, samtools
 # cat, compress, rename fastq files from a fastq_pass based on csv or excel sample-barcode sheet
 # runs faster to generate summary data
 # optionally runs faster-report to generate html report
+# option -b processes bam files instead (e.g. from a bam_pass folder) - files are merged per
+# sample with 'samtools merge' (no fastq conversion). faster-report accepts bam files directly;
+# faster itself needs fastq, so bam is streamed to it on the fly via 'samtools fastq'
 
 # c - a path to a csv or Excel file
 # Columns are sample and barcode, in any order
@@ -12,14 +15,14 @@
 # sample2, barcode02
 #------------------------
 
-# p - path to fastq_pass
+# p - path to fastq_pass (or bam_pass if -b is used)
 # option --report can be provided to run faster-report
 
 # r - option to make or not faster-report
 
 # setup
 # set -e
-usage="$(basename "$0") [-c samplesheet] [-p fastqpath] [-h] [-r]
+usage="$(basename "$0") [-c samplesheet] [-p fastqpath] [-h] [-r] [-b]
 
 Process ONT sequencing run - cat, compress, rename fastq files from a fastq_pass folder
 based on the samplesheet. Run faster or faster-report on the files. 
@@ -27,16 +30,20 @@ Results are saved in 'processed' folder in the current directory.
 Options:
     -h  show this help text
     -c  (required) a path to a csv or Excel file with columns 'sample' and 'barcode', in any order
-    -p  (required) path to ONT fastq_pass folder
+    -p  (required) path to ONT fastq_pass folder (or bam_pass folder if -b is used)
     -r  (optional flag) generate faster-report html file
-    -s  (optional) subsample fastq files for html report gc, len, qscore and kmer calculations (default: 0.1, can be 0.1 to 1.0)
-    -n  (optional) non-barcoded run - use barcode00 in samplesheet"
+    -s  (optional) subsample fastq/bam files for html report gc, len, qscore and kmer calculations (default: 0.1, can be 0.1 to 1.0)
+    -n  (optional) non-barcoded run - use barcode00 in samplesheet
+    -b  (optional flag) bam mode - process a bam_pass folder instead of fastq_pass; bam files are
+        merged per sample with 'samtools merge' (no fastq conversion). faster-report runs directly
+        on the merged bam files; faster stats are computed via 'samtools fastq' piped into faster"
 
 makereport=false
 nonbc=false
+bammode=false
 subs=0.1
 
-while getopts :hrnc:p:s: flag
+while getopts :hrnbc:p:s: flag
 do
    case "${flag}" in
       h) echo "$usage"; exit;;
@@ -45,10 +52,22 @@ do
       r) makereport=true;;
       s) subs=${OPTARG};;
       n) nonbc=true;;
+      b) bammode=true;;
       :) printf "missing argument for -%s\n" "$OPTARG" >&2; echo "$usage" >&2; exit 1;;
      \?) printf "illegal option: -%s\n" "$OPTARG" >&2; echo "$usage" >&2; exit 1;;
    esac
 done
+
+# set glob/extension/output-dir depending on mode
+if [[ $bammode == 'true' ]]; then
+    ext='bam'
+    globpat='*.bam'
+    outdir='bam'
+else
+    ext='fastq.gz'
+    globpat='*.fastq.gz'
+    outdir='fastq'
+fi
 
 # instread of having to supply samplesheet in nonbc runs, just make it here
 # use -c to give samples name
@@ -96,15 +115,15 @@ processed=$(dirname $fastqpath)/processed
 [ -d $processed ] && \
 echo -e "Processed folder exists, will be deleted ...\n================================================================" && \
 rm -rf $processed
-mkdir -p $processed/fastq
+mkdir -p $processed/$outdir
 cp $csvfile $processed/samplesheet.csv # make a copy of the sample sheet
 
 # redirect all output to log file and terminal
 exec > >(tee "$processed/.ont-process-run.log") 2>&1
 
 # get col indexes
-samplename_idx=$(head -1 ${csvfile} | sed 's/,/\n/g' | nl | grep -E 'S|sample' | cut -f 1)
-barcode_idx=$(head -1 ${csvfile} | sed 's/,/\n/g' | nl | grep -E 'B|barcode' | cut -f 1)
+samplename_idx=$(head -1 "${csvfile}" | tr -d '"\r' | sed 's/,/\n/g' | nl | grep -iE '^\s*[0-9]+\s+sample$' | cut -f 1 | head -1)
+barcode_idx=$(head -1 "${csvfile}" | tr -d '"\r' | sed 's/,/\n/g' | nl | grep -iE '^\s*[0-9]+\s+barcode$' | cut -f 1 | head -1)
 
 # check samplesheet is valid
 num='[0-9]+'
@@ -113,20 +132,20 @@ if  [[ ! $samplename_idx =~ $num ]] || [[ ! $barcode_idx =~ $num ]]; then
     exit 2
 fi
 
-# if non-barcoded, mv fastq files in barcode00 and proceed as ususal
-if [[ $nonbc == 'true' ]] && [[ $(ls -A $fastqpath/*.fastq.gz) ]]; then
+# if non-barcoded, mv fastq/bam files in barcode00 and proceed as ususal
+if [[ $nonbc == 'true' ]] && [[ $(ls -A $fastqpath/$globpat) ]]; then
     echo -e "Non-barcoded run, will create $fastqpath/barcode00 directory...\n================================================================"
-    mkdir -p $fastqpath/barcode00 && mv $fastqpath/*.fastq.gz $fastqpath/barcode00/
+    mkdir -p $fastqpath/barcode00 && mv $fastqpath/$globpat $fastqpath/barcode00/
 elif [[ $nonbc == 'true' ]]; then
-    echo -e "Non-barcoded run selected, but no fastq files found in $fastqpath \n================================================================"
+    echo -e "Non-barcoded run selected, but no $ext files found in $fastqpath \n================================================================"
     exit 0
 fi
 
 counter=0
 while IFS="," read line; do
     [ -z "$line" ] && continue # skip empty lines
-    samplename=$(echo $line | cut -f $samplename_idx -d, | tr -d " " | tr -d '\r') # also trim white spaces from sample names
-    barcode=$(echo $line | cut -f $barcode_idx -d, | tr -d " " | tr -d '\r') # also trim white spaces from bc names
+    samplename=$(echo $line | cut -f $samplename_idx -d, | tr -d '"' | tr -d " " | tr -d '\r') # also trim white spaces from sample names
+    barcode=$(echo $line | cut -f $barcode_idx -d, | tr -d '"' | tr -d " " | tr -d '\r') # also trim white spaces from bc names
     currentdir=$fastqpath/$barcode
     # skip header and if barcode or sample is NA or empty!
     # [[ -z "${var//[[:space:]]/}" ]] is used to check if barcode is empty or contains only spaces
@@ -134,42 +153,71 @@ while IFS="," read line; do
         echo "skipping $line"
         continue
     fi
-    pigz -q $currentdir/*.* #in case these are fastq files
+    if [[ $bammode == 'false' ]]; then
+        pigz -q $currentdir/*.* #in case these are fastq files
+    fi
     ((counter++)) # counter to add to sample name
     prefix=$(printf "%02d" $counter) # prepend zero
-    # check if dir exists and has files and cat
-    [ -d $currentdir ] && 
-    [ "$(ls -A $currentdir)" ] && 
-    echo "merging ${samplename} ----- ${barcode}" && 
-    #cat $currentdir/*.fastq.gz > $processed/fastq/${prefix}_${samplename}.fastq.gz ||
-    cat $currentdir/*.fastq.gz > $processed/fastq/${samplename}.fastq.gz ||
-    echo folder $currentdir not found or empty!
+    # check if dir exists and has files, then merge (cat for fastq, samtools merge for bam)
+    if [[ $bammode == 'true' ]]; then
+        [ -d $currentdir ] &&
+        [ "$(ls -A $currentdir)" ] &&
+        echo "merging ${samplename} ----- ${barcode}" &&
+        samtools merge -f $processed/$outdir/${samplename}.bam $currentdir/*.bam ||
+        echo folder $currentdir not found or empty!
+    else
+        [ -d $currentdir ] && 
+        [ "$(ls -A $currentdir)" ] && 
+        echo "merging ${samplename} ----- ${barcode}" && 
+        #cat $currentdir/*.fastq.gz > $processed/fastq/${prefix}_${samplename}.fastq.gz ||
+        cat $currentdir/*.fastq.gz > $processed/fastq/${samplename}.fastq.gz ||
+        echo folder $currentdir not found or empty!
+    fi
 done < $csvfile
 
 # if non-barcoded, repair the barcode00 back to original
-if [[ $nonbc == 'true' ]] && [[ $(ls -A $fastqpath/barcode00/*.fastq.gz) ]]; then
+if [[ $nonbc == 'true' ]] && [[ $(ls -A $fastqpath/barcode00/$globpat) ]]; then
     echo -e "Non-barcoded run, will move files in $fastqpath/barcode00 back...\n================================================================"
-    mv $fastqpath/barcode00/*.fastq.gz $fastqpath/ && rm -r $fastqpath/barcode00
+    mv $fastqpath/barcode00/$globpat $fastqpath/ && rm -r $fastqpath/barcode00
 fi
 
-nsamples=$(ls -A $processed/fastq/*.fastq.gz | wc -l)
-[ "$(ls -A $processed/fastq/*.fastq.gz)" ] &&
-echo -e '================================================================' &&
-echo "Running faster on $nsamples samples ..." && 
-echo -e '================================================================' &&
-echo -e "file\treads\tbases\tn_bases\tmin_len\tmax_len\tmean_len\tQ1\tQ2\tQ3\tN50\tQ20_percent\tQ30_percent" > $processed/fastq-stats.tsv &&
-parallel -k faster -ts ::: $processed/fastq/*.fastq.gz >> $processed/fastq-stats.tsv || 
-echo "No fastq files found"
+if [[ $bammode == 'true' ]]; then
+    # faster needs fastq input, so stream each merged bam through 'samtools fastq' on the fly,
+    # then fix up the file-name column (which would otherwise show /dev/stdin) to the sample name
+    faster_from_bam() {
+        local bamfile=$1
+        local samplename=$(basename "$bamfile" .bam)
+        samtools fastq "$bamfile" 2>/dev/null | faster -ts /dev/stdin | awk -v s="$samplename" 'BEGIN{OFS="\t"} {$1=s; print}'
+    }
+    export -f faster_from_bam
+    nsamples=$(ls -A $processed/bam/*.bam | wc -l)
+    [ "$(ls -A $processed/bam/*.bam)" ] &&
+    echo -e '================================================================' &&
+    echo "Running faster (via samtools fastq) on $nsamples samples ..." &&
+    echo -e '================================================================' &&
+    echo -e "file\treads\tbases\tn_bases\tmin_len\tmax_len\tmean_len\tQ1\tQ2\tQ3\tN50\tQ20_percent\tQ30_percent" > $processed/fastq-stats.tsv &&
+    parallel -k faster_from_bam ::: $processed/bam/*.bam >> $processed/fastq-stats.tsv ||
+    echo "No bam files found"
+else
+    nsamples=$(ls -A $processed/fastq/*.fastq.gz | wc -l)
+    [ "$(ls -A $processed/fastq/*.fastq.gz)" ] &&
+    echo -e '================================================================' &&
+    echo "Running faster on $nsamples samples ..." && 
+    echo -e '================================================================' &&
+    echo -e "file\treads\tbases\tn_bases\tmin_len\tmax_len\tmean_len\tQ1\tQ2\tQ3\tN50\tQ20_percent\tQ30_percent" > $processed/fastq-stats.tsv &&
+    parallel -k faster -ts ::: $processed/fastq/*.fastq.gz >> $processed/fastq-stats.tsv || 
+    echo "No fastq files found"
+fi
 
 
 if [[ $makereport == 'true' ]]; then
-    if [ "$(ls -A $processed/fastq/*.fastq.gz)" ]; then
+    if [ "$(ls -A $processed/$outdir/$globpat)" ]; then
         echo -e 'Running nextflow ...\n================================================================'
         nf_temp=$(mktemp -d)
-        fastq_abs=$(realpath "$processed/fastq")
+        reads_abs=$(realpath "$processed/$outdir")
         processed_abs=$(realpath "$processed")
-        echo -e "nextflow run angelovangel/faster-report --reads $fastq_abs --subsample $subs\n-----------------"
-        if ( cd "$nf_temp" && nextflow run angelovangel/faster-report --reads "$fastq_abs" --subsample $subs); then
+        echo -e "nextflow run angelovangel/faster-report --reads $reads_abs --subsample $subs\n-----------------"
+        if ( cd "$nf_temp" && nextflow run angelovangel/faster-report --reads "$reads_abs" --subsample $subs); then
             cp "$nf_temp/output/faster-report.html" "$processed_abs/"
             rm -rf "$nf_temp"
         else
