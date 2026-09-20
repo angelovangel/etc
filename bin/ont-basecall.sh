@@ -9,7 +9,7 @@ usage="$(basename "$0") [-m model] [-p pod5] [-k kit] [-r] [-b] [-t] [-f] [-h]
 Basecall and optionally demultiplex pod5 files using dorado. 
 Results folder (named basecall-model) will be in the path of the selected pod5 folder.
 Options:
-    -m  (required) dorado model, either fast, hac, or sup
+    -m  (required) dorado model, either fast, hac, or sup (or a specific model - see dorado download --list)
     -p  (required) path to ONT pod5 folder
     -k  (optional) barcoding kit, if used demultiplexing will be performed (SQK-NBD114-96, SQK-RBK114-96 ...)
     -l  (optional) path to adaptive sampling decision file (with columns read_id, action, action_response). Only reads with 'action == sequence' will be basecalled.
