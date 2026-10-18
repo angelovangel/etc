@@ -298,12 +298,18 @@ HTML_TEMPLATE = """\
   h2{{color:#1a202c;border-bottom:2px solid #e2e8f0;padding-bottom:8px;margin-top:40px;}}
   h3{{color:#2d3748;margin-top:28px;font-size:1.05rem;}}
   table{{border-collapse:collapse;width:100%;margin:14px 0;font-size:13.5px;
-         background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.07);border-radius:6px;overflow:hidden;}}
+         background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.07);}}
   th{{background:#edf2f7;color:#2d3748;font-weight:600;text-align:left;
-      padding:10px 12px;border-bottom:2px solid #cbd5e0;}}
+      padding:10px 12px;border-bottom:2px solid #cbd5e0;
+      cursor:pointer;user-select:none;white-space:nowrap;}}
+  th:hover{{background:#e2e8f0;}}
+  .sort-arrow{{font-size:10px;color:#4a5568;margin-left:3px;}}
   td{{padding:9px 12px;border-bottom:1px solid #e9ecef;}}
-  tr:last-child td{{border-bottom:none;}}
-  tr:hover td{{background:#f0f4ff;}}
+  tbody tr:last-child td{{border-bottom:none;}}
+  tbody tr:hover td{{background:#f0f4ff;}}
+  tfoot tr td{{background:#edf2f7 !important;font-weight:600;border-top:2px solid #cbd5e0;
+               color:#2d3748;padding:9px 12px;white-space:nowrap;border-bottom:none;}}
+  .table-wrap{{overflow-x:auto;border-radius:6px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,.07);}}
   .plot-container{{margin:20px 0;background:#fff;border-radius:8px;
                    box-shadow:0 1px 4px rgba(0,0,0,.08);border:1px solid #e2e8f0;overflow:hidden;}}
   .footer{{margin-top:48px;border-top:1px solid #e2e8f0;padding-top:14px;
@@ -315,26 +321,59 @@ HTML_TEMPLATE = """\
 <h2>{title}</h2>
 
 <h3>Metrics Summary &amp; Pore Retention</h3>
-<table>
+<div class="table-wrap">
+<table id="summary-table">
   <thead>
     <tr>
-      <th>Sample</th>
-      <th>Flow Cell ID</th>
-      <th style="text-align:right">Yield (Gb)</th>
-      <th style="text-align:right">Total Reads</th>
-      <th style="text-align:right">Passed Reads</th>
-      <th style="text-align:right">Pass Rate (%)</th>
-      <th style="text-align:right">Avg Active Pores</th>
-      <th style="text-align:right">Yield / Pore (Mb)</th>
-      <th style="text-align:right">Blocking (%)</th>
-      <th style="text-align:right">Pores 24 h</th>
-      <th style="text-align:right">Pores 48 h</th>
+      <th data-type="text" onclick="sortTable(this)">Sample<span class="sort-arrow"></span></th>
+      <th data-type="text" onclick="sortTable(this)">Flow Cell ID<span class="sort-arrow"></span></th>
+      <th style="text-align:right" data-type="number" onclick="sortTable(this)">Yield (Gb)<span class="sort-arrow"></span></th>
+      <th style="text-align:right" data-type="number" onclick="sortTable(this)">Total Reads<span class="sort-arrow"></span></th>
+      <th style="text-align:right" data-type="number" onclick="sortTable(this)">Passed Reads<span class="sort-arrow"></span></th>
+      <th style="text-align:right" data-type="number" onclick="sortTable(this)">Pass Rate (%)<span class="sort-arrow"></span></th>
+      <th style="text-align:right" data-type="number" onclick="sortTable(this)">Avg Active Pores<span class="sort-arrow"></span></th>
+      <th style="text-align:right" data-type="number" onclick="sortTable(this)">Yield / Pore (Mb)<span class="sort-arrow"></span></th>
+      <th style="text-align:right" data-type="number" onclick="sortTable(this)">Blocking (%)<span class="sort-arrow"></span></th>
+      <th style="text-align:right" data-type="number" onclick="sortTable(this)">Pores 24 h<span class="sort-arrow"></span></th>
+      <th style="text-align:right" data-type="number" onclick="sortTable(this)">Pores 48 h<span class="sort-arrow"></span></th>
     </tr>
   </thead>
-  <tbody>
+  <tbody id="summary-tbody">
 {summary_rows}
   </tbody>
+  <tfoot>
+{total_row}
+  </tfoot>
 </table>
+</div>
+<script>
+  function sortTable(th) {{
+    const table = th.closest('table');
+    const tbody = table.querySelector('tbody');
+    const headerCells = Array.from(th.parentNode.children);
+    const colIndex = headerCells.indexOf(th);
+    const type = th.dataset.type;
+    const dir = th.dataset.dir === 'asc' ? 'desc' : 'asc';
+    headerCells.forEach(h => {{ h.dataset.dir = ''; h.querySelector('.sort-arrow').textContent = ''; }});
+    th.dataset.dir = dir;
+    th.querySelector('.sort-arrow').textContent = dir === 'asc' ? '\u25B2' : '\u25BC';
+    const rows = Array.from(tbody.querySelectorAll('tr'));
+    rows.sort((a, b) => {{
+      const av = a.children[colIndex].dataset.value;
+      const bv = b.children[colIndex].dataset.value;
+      let cmp;
+      if (type === 'number') {{
+        const an = av === '' ? -Infinity : parseFloat(av);
+        const bn = bv === '' ? -Infinity : parseFloat(bv);
+        cmp = an - bn;
+      }} else {{
+        cmp = av.localeCompare(bv);
+      }}
+      return dir === 'asc' ? cmp : -cmp;
+    }});
+    rows.forEach(r => tbody.appendChild(r));
+  }}
+</script>
 
 <h3>Active Pores Over Time (Pore Stability)</h3>
 <div class="plot-container">
@@ -964,21 +1003,40 @@ def _render_stacked_bar_iframe(plot_data):
 
 
 def _render_summary_row(s):
+    def dv(v):  # numeric data-value for sorting
+        return '' if v is None else repr(v)
     return (
         f"    <tr>"
-        f"<td><strong>{s['label']}</strong></td>"
-        f"<td>{s.get('flow_cell_id', '')}</td>"
-        f"<td style='text-align:right'>{s['yield_gb']:.2f}</td>"
-        f"<td style='text-align:right'>{s['total_reads']:,}</td>"
-        f"<td style='text-align:right'>{s['passed_reads']:,}</td>"
-        f"<td style='text-align:right'>{s['pass_rate']:.2f}%</td>"
-        f"<td style='text-align:right'>{s['avg_active']:,}</td>"
-        f"<td style='text-align:right'>{s['yield_per_pore_mb']:.2f}</td>"
-        f"<td style='text-align:right'>{s['blocking_pct']:.2f}%</td>"
-        f"<td style='text-align:right'>{s['pores_24h']:,}</td>"
-        f"<td style='text-align:right'>{s['pores_48h']:,}</td>"
+        f"<td data-value=\"{s['label'].lower()}\">{s['label']}</td>"
+        f"<td data-value=\"{(s.get('flow_cell_id') or '').lower()}\">{s.get('flow_cell_id', '')}</td>"
+        f"<td style='text-align:right' data-value=\"{s['yield_gb']}\">{s['yield_gb']:.2f}</td>"
+        f"<td style='text-align:right' data-value=\"{s['total_reads']}\">{s['total_reads']:,}</td>"
+        f"<td style='text-align:right' data-value=\"{s['passed_reads']}\">{s['passed_reads']:,}</td>"
+        f"<td style='text-align:right' data-value=\"{s['pass_rate']}\">{s['pass_rate']:.2f}%</td>"
+        f"<td style='text-align:right' data-value=\"{s['avg_active']}\">{s['avg_active']:,}</td>"
+        f"<td style='text-align:right' data-value=\"{s['yield_per_pore_mb']}\">{s['yield_per_pore_mb']:.2f}</td>"
+        f"<td style='text-align:right' data-value=\"{s['blocking_pct']}\">{s['blocking_pct']:.2f}%</td>"
+        f"<td style='text-align:right' data-value=\"{s['pores_24h']}\">{s['pores_24h']:,}</td>"
+        f"<td style='text-align:right' data-value=\"{s['pores_48h']}\">{s['pores_48h']:,}</td>"
         f"</tr>"
     )
+def _render_total_row(samples):
+    total_yield  = sum(s["yield_gb"]      for s in samples)
+    total_reads  = sum(s["total_reads"]   for s in samples)
+    passed_reads = sum(s["passed_reads"]  for s in samples)
+    n_cols = 11  # total columns in the table
+    return (
+        f"    <tr>"
+        f"<td><strong>Total</strong></td>"
+        f"<td></td>"  # Flow Cell ID
+        f"<td style='text-align:right'>{total_yield:.2f}</td>"
+        f"<td style='text-align:right'>{total_reads:,}</td>"
+        f"<td style='text-align:right'>{passed_reads:,}</td>"
+        f"<td></td><td></td><td></td><td></td><td></td><td></td>"
+        f"</tr>"
+    )
+
+
 
 
 # ---------------------------------------------------------------------------
@@ -1048,10 +1106,12 @@ def generate_report(pa_files, tp_files, labels, title, out_path, sample_hz):
     pore_activity_iframe = _render_stacked_bar_iframe(pore_act_data)
 
     summary_rows = "\n".join(_render_summary_row(s) for s in samples_metrics)
+    total_row    = _render_total_row(samples_metrics)
 
     report = HTML_TEMPLATE.format(
         title=title,
         summary_rows=summary_rows,
+        total_row=total_row,
         active_pores_iframe=active_pores_iframe,
         yield_iframe=yield_iframe,
         pore_activity_iframe=pore_activity_iframe,
