@@ -1,5 +1,5 @@
 #! /usr/bin/env bash
-# dependencies: utag (+ barbell), parallel, faster, nextflow (for -r)
+# dependencies: utag (+ barbell), parallel, faster, nextflow (for -r), plate-heatmap.py (optional)
 # demultiplex custom utag (CDI/UDI) amplicon libraries with 'utag demux' and lay out the results
 # like ont-process-run.sh: processed/fastq/<sample>.fastq.gz, processed/samplesheet.*,
 # processed/fastq-stats.tsv and optionally processed/faster-report.html
