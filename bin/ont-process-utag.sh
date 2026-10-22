@@ -131,19 +131,21 @@ if [ -n "$(find "$utag_out" -path "$utag_out/barbell" -prune -o -type f -name '*
         xargs -0 -r $zip_cmd -q
 fi
 
+# results are copied, not moved, out of the temp folder (deleted below): it is on another filesystem,
+# and mv would try to keep the owner, which network shares refuse ("failed to preserve ownership")
 # reads to processed/fastq, the folder name ont-process-run.sh uses: the contents of utag's samples/
 # (<sample>.fastq.gz; twopass: <ONT bin>/<sample>) and ont_bins/ (twopass --pass1-only);
 # utag writes no file for 0-read samples
 for d in samples ont_bins; do
     if [ -d "$utag_out/$d" ] && [ -n "$(ls -A "$utag_out/$d")" ]; then
-        mv "$utag_out/$d"/* "$processed/fastq/"
+        cp -R "$utag_out/$d"/* "$processed/fastq/"
     fi
 done
 # utag's run report (read fate, patterns, metrics, plate heatmap) to processed/
-[ -f "$utag_out/run_summary.html" ] && mv "$utag_out/run_summary.html" "$processed/"
+[ -f "$utag_out/run_summary.html" ] && cp "$utag_out/run_summary.html" "$processed/"
 mkdir -p "$processed/utag"
 for f in summary.tsv unexpected.tsv run_summary.csv utag.log barbell/inspect.txt; do
-    [ -f "$utag_out/$f" ] && mv "$utag_out/$f" "$processed/utag/"
+    [ -f "$utag_out/$f" ] && cp "$utag_out/$f" "$processed/utag/"
 done
 rm -rf "$utag_tmp"
 
