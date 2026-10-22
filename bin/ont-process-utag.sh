@@ -102,18 +102,33 @@ fi
 # RStudio/Shiny set CLICOLOR_FORCE=1; barbell then writes ANSI codes into its output files
 unset CLICOLOR_FORCE FORCE_COLOR
 
-# utag writes to a temp folder next to processed; only its summary files are kept, barbell/ is deleted
+# utag works in a temp folder on local disk: barbell writes large tables and one file per tag pair,
+# which is very slow on a network share (run folders usually are). Only the results are moved to
+# processed, barbell/ is deleted. Set UTAG_TMPDIR (default: TMPDIR or /tmp) to use another local disk;
+# it needs about 2-3x the size of the input reads.
 # utag names its run_summary.html after the output folder, so use the run name for it (e.g. run1-barcode01)
-utag_tmp=$(mktemp -d "$(dirname "$processed")/.utag-tmp-XXXXXX")
+tmp_base=${UTAG_TMPDIR:-${TMPDIR:-/tmp}}
+utag_tmp=$(mktemp -d "${tmp_base%/}/utag-tmp-XXXXXX") || { echo "could not create a temp folder" >&2; exit 2; }
 trap 'rm -rf "$utag_tmp"' EXIT INT TERM
+echo -e "utag temp folder: $utag_tmp\n================================================================"
 run_label=$(basename "$processed")
 run_label=$(basename "$(dirname "$processed")")${run_label#processed}
 utag_out="$utag_tmp/$run_label"
 
 echo -e "Running utag demux ...\n================================================================"
-if ! utag demux --color never --gzip -r "$fastqpath" -o "$utag_out" "${samplesheet_args[@]}" "$@"; then
+# no --gzip: barbell would compress every per-tag-pair file while trimming; the samples are compressed
+# with pigz below instead
+if ! utag demux --color never -r "$fastqpath" -o "$utag_out" "${samplesheet_args[@]}" "$@"; then
     echo "utag demux failed!" >&2
     exit 1
+fi
+
+# compress the per-sample files (local disk, in parallel)
+if [ -n "$(find "$utag_out" -path "$utag_out/barbell" -prune -o -type f -name '*.fastq' -print | head -1)" ]; then
+    echo -e "Compressing sample files ...\n================================================================"
+    zip_cmd=$(command -v pigz || echo gzip)
+    find "$utag_out/samples" "$utag_out/ont_bins" -type f -name '*.fastq' -print0 2> /dev/null |
+        xargs -0 -r $zip_cmd -q
 fi
 
 # reads to processed/fastq, the folder name ont-process-run.sh uses: the contents of utag's samples/
