@@ -1,10 +1,10 @@
 #! /usr/bin/env bash
-# dependencies: utag (+ barbell), parallel, faster, nextflow (for -r), plate-heatmap.py (optional)
+# dependencies: utag (+ barbell), parallel, faster, nextflow (for -r)
 # demultiplex custom utag (CDI/UDI) amplicon libraries with 'utag demux' and lay out the results
 # like ont-process-run.sh: processed/fastq/<sample>.fastq.gz, processed/samplesheet.*,
 # processed/fastq-stats.tsv and optionally processed/faster-report.html
 # utag's summary files (summary.tsv, unexpected.tsv, run_summary.csv, utag.log, inspect.txt) are kept
-# in processed/utag (barbell/ intermediates are deleted), and a plate heatmap of reads per well is written to processed/plates.html
+# in processed/utag (barbell/ intermediates are deleted); utag's run report goes to processed/run_summary.html
 
 # p - path to the reads: fastq_pass, demux, combined or a single barcodeNN folder (searched recursively)
 # c - (optional) samplesheet csv or xlsx, see 'utag demux -h'
@@ -103,41 +103,47 @@ fi
 unset CLICOLOR_FORCE FORCE_COLOR
 
 # utag writes to a temp folder next to processed; only its summary files are kept, barbell/ is deleted
+# utag names its run_summary.html after the output folder, so use the run name for it (e.g. run1-barcode01)
 utag_tmp=$(mktemp -d "$(dirname "$processed")/.utag-tmp-XXXXXX")
 trap 'rm -rf "$utag_tmp"' EXIT INT TERM
+run_label=$(basename "$processed")
+run_label=$(basename "$(dirname "$processed")")${run_label#processed}
+utag_out="$utag_tmp/$run_label"
 
 echo -e "Running utag demux ...\n================================================================"
-if ! utag demux --color never --gzip -r "$fastqpath" -o "$utag_tmp" "${samplesheet_args[@]}" "$@"; then
+if ! utag demux --color never --gzip -r "$fastqpath" -o "$utag_out" "${samplesheet_args[@]}" "$@"; then
     echo "utag demux failed!" >&2
     exit 1
 fi
 
-# per-sample files to processed/fastq, like ont-process-run.sh (utag writes no file for 0-read samples)
-if compgen -G "$utag_tmp/samples/*.fastq.gz" > /dev/null; then
-    mv "$utag_tmp"/samples/*.fastq.gz "$processed/fastq/"
-fi
+# reads to processed/fastq, the folder name ont-process-run.sh uses: the contents of utag's samples/
+# (<sample>.fastq.gz; twopass: <ONT bin>/<sample>) and ont_bins/ (twopass --pass1-only);
+# utag writes no file for 0-read samples
+for d in samples ont_bins; do
+    if [ -d "$utag_out/$d" ] && [ -n "$(ls -A "$utag_out/$d")" ]; then
+        mv "$utag_out/$d"/* "$processed/fastq/"
+    fi
+done
+# utag's run report (read fate, patterns, metrics, plate heatmap) to processed/
+[ -f "$utag_out/run_summary.html" ] && mv "$utag_out/run_summary.html" "$processed/"
 mkdir -p "$processed/utag"
 for f in summary.tsv unexpected.tsv run_summary.csv utag.log barbell/inspect.txt; do
-    [ -f "$utag_tmp/$f" ] && mv "$utag_tmp/$f" "$processed/utag/"
+    [ -f "$utag_out/$f" ] && mv "$utag_out/$f" "$processed/utag/"
 done
 rm -rf "$utag_tmp"
 
-nsamples=$(find "$processed/fastq" -name '*.fastq.gz' | wc -l | tr -d ' ')
+# all per-sample / per-bin read files, also in subfolders (twopass: fastq/<ONT bin>/)
+reads_files=()
+while IFS= read -r f; do reads_files+=("$f"); done < <(
+    find "$processed/fastq" -type f \( -name '*.fastq.gz' -o -name '*.fastq' \) 2> /dev/null | sort)
+nsamples=${#reads_files[@]}
 [ "$nsamples" -gt 0 ] &&
 echo -e '================================================================' &&
 echo "Running faster on $nsamples samples ..." &&
 echo -e '================================================================' &&
 echo -e "file\treads\tbases\tn_bases\tmin_len\tmax_len\tmean_len\tQ1\tQ2\tQ3\tN50\tQ20_percent\tQ30_percent" > "$processed/fastq-stats.tsv" &&
-parallel -k faster -ts ::: "$processed"/fastq/*.fastq.gz >> "$processed/fastq-stats.tsv" ||
+parallel -k faster -ts ::: "${reads_files[@]}" >> "$processed/fastq-stats.tsv" ||
 echo "No fastq files found"
-
-# plate heatmap of reads per well (plate-heatmap.py ships next to utag.py)
-utag_dir=$(dirname "$(realpath "$(command -v utag)")")
-if [ -f "$utag_dir/plate-heatmap.py" ] && [ -f "$processed/utag/summary.tsv" ]; then
-    echo -e '================================================================\nWriting plate heatmap ...'
-    python3 "$utag_dir/plate-heatmap.py" "$processed/utag/summary.tsv" -o "$processed/plates.html" ||
-    echo "plate heatmap failed!"
-fi
 
 if [[ $makereport == 'true' ]]; then
     if [ "$nsamples" -gt 0 ]; then
