@@ -1,5 +1,5 @@
 #! /usr/bin/env bash
-# dependencies: pigz, parallel, faster, faster-report.R, samtools
+# dependencies: pigz, parallel, faster, faster-report.R, samtools, dorado (optional, for -t)
 # cat, compress, rename fastq files from a fastq_pass based on csv or excel sample-barcode sheet
 # runs faster to generate summary data
 # optionally runs faster-report to generate html report
@@ -35,13 +35,15 @@ Options:
     -p  (required) path to ONT fastq_pass folder (or bam_pass folder - auto-detected)
     -r  (optional flag) generate faster-report html file
     -s  (optional) subsample fastq/bam files for html report gc, len, qscore and kmer calculations (default: 0.1, can be 0.1 to 1.0)
-    -n  (optional) non-barcoded run - use barcode00 in samplesheet"
+    -n  (optional) non-barcoded run - use barcode00 in samplesheet
+    -t  (optional) trim adapters, primers and barcodes with 'dorado trim', give the sequencing kit name, e.g. SQK-NBD114-24"
 
 makereport=false
 nonbc=false
 subs=0.1
+trimkit=''
 
-while getopts :hrnc:p:s: flag
+while getopts :hrnc:p:s:t: flag
 do
    case "${flag}" in
       h) echo "$usage"; exit;;
@@ -50,6 +52,7 @@ do
       r) makereport=true;;
       s) subs=${OPTARG};;
       n) nonbc=true;;
+      t) trimkit=${OPTARG};;
       :) printf "missing argument for -%s\n" "$OPTARG" >&2; echo "$usage" >&2; exit 1;;
      \?) printf "illegal option: -%s\n" "$OPTARG" >&2; echo "$usage" >&2; exit 1;;
    esac
@@ -218,6 +221,36 @@ done < $csvfile
 if [[ $nonbc == 'true' ]] && [[ $(ls -A $fastqpath/barcode00/$globpat) ]]; then
     echo -e "Non-barcoded run, will move files in $fastqpath/barcode00 back...\n================================================================"
     mv $fastqpath/barcode00/$globpat $fastqpath/ && rm -r $fastqpath/barcode00
+fi
+
+# optionally trim adapters/primers/barcodes from merged files with dorado trim
+# --sequencing-kit is needed for barcode trimming, without it only adapters and primers are trimmed
+if [[ -n $trimkit ]]; then
+    if ! command -v dorado > /dev/null; then
+        echo "dorado not found, skipping trimming!" >&2
+    else
+        echo -e "Trimming adapters and barcodes with dorado trim (kit: $trimkit)...\n================================================================"
+        for f in $processed/$outdir/$globpat; do
+            [ -e "$f" ] || continue
+            tmp=${f%.$ext}.trimmed.$ext
+            echo "trimming $(basename $f)"
+            if [[ $bammode == 'true' ]]; then
+                dorado trim --sequencing-kit "$trimkit" "$f" > "$tmp"
+                trim_ok=$?
+            else
+                # check dorado's exit status - pigz writes a gzip header even on empty input
+                dorado trim --sequencing-kit "$trimkit" --emit-fastq "$f" | pigz > "$tmp"
+                trim_ok=${PIPESTATUS[0]}
+            fi
+            # replace the original only if trimming succeeded and produced data
+            if [ $trim_ok -eq 0 ] && [ -s "$tmp" ]; then
+                mv "$tmp" "$f"
+            else
+                echo "trimming failed for $f, keeping untrimmed file"
+                rm -f "$tmp"
+            fi
+        done
+    fi
 fi
 
 if [[ $bammode == 'true' ]]; then
